@@ -30,6 +30,12 @@ func NewAuthMiddleware(jwtService *auth.JWTService) *AuthMiddleware {
 // RequireAuth middleware ensures the request has a valid JWT token.
 func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Handle CORS preflight
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		cookie, err := r.Cookie("auth_token")
 		if err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)

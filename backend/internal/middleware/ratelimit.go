@@ -75,6 +75,12 @@ func (rl *RateLimiter) cleanupLoop() {
 // Limit middleware applies rate limiting to a handler.
 func (rl *RateLimiter) Limit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip rate limiting for CORS preflight
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		ip := getClientIP(r)
 		limiter := rl.getLimiter(ip)
 
