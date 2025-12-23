@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { currentScreen, isAdmin } from './stores/app.js';
-  import { getCachedPlayers, getCachedVenues } from './services/db.js';
+  import { getCachedPlayers, getCachedVenues, cachePlayers, cacheVenues } from './services/db.js';
   import { getPlayers, getVenues, checkAuth } from './services/api.js';
   import { players, venues } from './stores/app.js';
   
@@ -12,6 +12,8 @@
   import LiveMatch from './routes/LiveMatch.svelte';
   import MatchSummary from './routes/MatchSummary.svelte';
   import TournamentSetup from './routes/TournamentSetup.svelte';
+  import TournamentTeamCreation from './routes/TournamentTeamCreation.svelte';
+  import TournamentDashboard from './routes/TournamentDashboard.svelte';
   import AdminLogin from './routes/AdminLogin.svelte';
   import AdminDashboard from './routes/AdminDashboard.svelte';
   import AdminPlayers from './routes/AdminPlayers.svelte';
@@ -38,6 +40,10 @@
       const freshVenues = await getVenues();
       players.set(freshPlayers);
       venues.set(freshVenues);
+      
+      // Cache fresh data for offline use
+      if (freshPlayers.length > 0) await cachePlayers(freshPlayers);
+      if (freshVenues.length > 0) await cacheVenues(freshVenues);
     } catch (err) {
       console.log('Failed to fetch fresh data, using cache');
     }
@@ -59,9 +65,13 @@
   {:else if screen === 'live-match'}
     <LiveMatch />
   {:else if screen === 'match-summary'}
+    <MatchSummary />
   {:else if screen === 'tournament-setup'}
     <TournamentSetup />
-    <MatchSummary />
+  {:else if screen === 'tournament-team-creation'}
+    <TournamentTeamCreation />
+  {:else if screen === 'tournament-dashboard'}
+    <TournamentDashboard />
   {:else if screen === 'admin-login'}
     <AdminLogin />
   {:else if screen === 'admin-dashboard'}

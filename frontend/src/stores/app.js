@@ -26,6 +26,8 @@ const initialMatchState = {
     venueId: null,
     venueName: null,
     matchType: 'singles',
+    matchMode: 'standard',
+    bestOf: null, // 3 or 5 for short format
     teamA: [],
     teamB: [],
     events: [],
@@ -55,6 +57,13 @@ export const score = derived(matchState, ($match) => {
 
     return { teamA, teamB };
 });
+
+// ═══════════════════════════════════════════════════
+// ADMIN VIEW MATCH
+// ═══════════════════════════════════════════════════
+
+// Used when admin wants to view a completed match summary
+export const viewMatchId = writable(null);
 
 // ═══════════════════════════════════════════════════
 // PLAYERS & VENUES CACHE

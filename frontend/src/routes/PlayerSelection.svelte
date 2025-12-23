@@ -4,18 +4,36 @@
   import { createMatch } from '../services/api.js';
   import { saveCurrentMatch } from '../services/db.js';
   
-  let teamAPlayers = ['', ''];
-  let teamBPlayers = ['', ''];
+  let teamAPlayer1 = '';
+  let teamAPlayer2 = '';
+  let teamBPlayer1 = '';
+  let teamBPlayer2 = '';
   let loading = false;
   
   $: isSingles = $matchState.matchType === 'singles';
   $: requiredPlayers = isSingles ? 1 : 2;
   
-  // Reactive: Track all selected players
-  $: allSelectedPlayers = [
-    ...teamAPlayers.filter(p => p),
-    ...teamBPlayers.filter(p => p)
-  ];
+  // Filter active players
+  $: activePlayers = $players.filter(p => p.active !== false);
+  
+  // Reactive available players for each dropdown
+  // Always include the currently selected value to prevent selection loss during re-renders
+  $: availableForA1 = activePlayers.filter(p => 
+    p.id === teamAPlayer1 || // Always keep current selection
+    (p.id !== teamAPlayer2 && p.id !== teamBPlayer1 && p.id !== teamBPlayer2)
+  );
+  $: availableForA2 = activePlayers.filter(p => 
+    p.id === teamAPlayer2 || // Always keep current selection
+    (p.id !== teamAPlayer1 && p.id !== teamBPlayer1 && p.id !== teamBPlayer2)
+  );
+  $: availableForB1 = activePlayers.filter(p => 
+    p.id === teamBPlayer1 || // Always keep current selection
+    (p.id !== teamAPlayer1 && p.id !== teamAPlayer2 && p.id !== teamBPlayer2)
+  );
+  $: availableForB2 = activePlayers.filter(p => 
+    p.id === teamBPlayer2 || // Always keep current selection
+    (p.id !== teamAPlayer1 && p.id !== teamAPlayer2 && p.id !== teamBPlayer1)
+  );
   
   function goBack() {
     navigate('match-setup');
@@ -23,16 +41,19 @@
   
   async function startMatch() {
     // Validate selections
-    const teamA = teamAPlayers.slice(0, requiredPlayers).filter(p => p);
-    const teamB = teamBPlayers.slice(0, requiredPlayers).filter(p => p);
+    const teamA = isSingles ? [teamAPlayer1] : [teamAPlayer1, teamAPlayer2];
+    const teamB = isSingles ? [teamBPlayer1] : [teamBPlayer1, teamBPlayer2];
     
-    if (teamA.length !== requiredPlayers || teamB.length !== requiredPlayers) {
+    const teamAFiltered = teamA.filter(p => p);
+    const teamBFiltered = teamB.filter(p => p);
+    
+    if (teamAFiltered.length !== requiredPlayers || teamBFiltered.length !== requiredPlayers) {
       alert(`Please select ${requiredPlayers} player(s) for each team`);
       return;
     }
     
     // Check for duplicates
-    const allSelected = [...teamA, ...teamB];
+    const allSelected = [...teamAFiltered, ...teamBFiltered];
     if (new Set(allSelected).size !== allSelected.length) {
       alert('Cannot select the same player multiple times');
       return;
@@ -45,18 +66,18 @@
       const match = await createMatch(
         $matchState.venueId,
         $matchState.matchType,
-        teamA,
-        teamB
+        teamAFiltered,
+        teamBFiltered
       );
       
       // Update match state
       matchState.update(m => ({
         ...m,
         id: match.id,
-        teamA,
-        teamB,
+        teamA: teamAFiltered,
+        teamB: teamBFiltered,
         startedAt: new Date().toISOString(),
-        currentServer: teamA[0],
+        currentServer: teamAFiltered[0],
         serverTeam: 'A',
       }));
       
@@ -66,12 +87,15 @@
         venueId: $matchState.venueId,
         venueName: $matchState.venueName,
         matchType: $matchState.matchType,
-        teamA,
-        teamB,
+        matchMode: $matchState.matchMode,
+        bestOf: $matchState.bestOf,
+        teamA: teamAFiltered,
+        teamB: teamBFiltered,
         startedAt: new Date().toISOString(),
-        currentServer: teamA[0],
+        currentServer: teamAFiltered[0],
         serverTeam: 'A',
         completed: false,
+        events: [],
       });
       
       navigate('live-match');
@@ -79,13 +103,6 @@
       alert('Failed to create match: ' + err.message);
       loading = false;
     }
-  }
-  
-  // Get available players for a specific dropdown
-  // Excludes all selected players EXCEPT the current value (so you can see your own selection)
-  function getAvailablePlayers(currentValue) {
-    const otherSelected = allSelectedPlayers.filter(p => p !== currentValue);
-    return $players.filter(p => !otherSelected.includes(p.id));
   }
 </script>
 
@@ -104,15 +121,20 @@
       <div>
         <h2 class="mb-md">Team A</h2>
         <div style="display: flex; flex-direction: column; gap: var(--space-sm);">
-          {#each Array(requiredPlayers) as _, i}
-            {@const availablePlayers = getAvailablePlayers(teamAPlayers[i])}
-            <select class="form-select" bind:value={teamAPlayers[i]}>
-              <option value="">Player {i + 1}...</option>
-              {#each availablePlayers as player}
-                <option value={player.id}>{player.name}</option>
+          <select class="form-select" value={teamAPlayer1} on:change={(e) => teamAPlayer1 = e.target.value}>
+            <option value="">Select player...</option>
+            {#each availableForA1 as player (player.id)}
+              <option value={player.id} selected={player.id === teamAPlayer1}>{player.name}</option>
+            {/each}
+          </select>
+          {#if !isSingles}
+            <select class="form-select" value={teamAPlayer2} on:change={(e) => teamAPlayer2 = e.target.value}>
+              <option value="">Select player...</option>
+              {#each availableForA2 as player (player.id)}
+                <option value={player.id} selected={player.id === teamAPlayer2}>{player.name}</option>
               {/each}
             </select>
-          {/each}
+          {/if}
         </div>
       </div>
       
@@ -120,25 +142,32 @@
       <div>
         <h2 class="mb-md">Team B</h2>
         <div style="display: flex; flex-direction: column; gap: var(--space-sm);">
-          {#each Array(requiredPlayers) as _, i}
-            {@const availablePlayers = getAvailablePlayers(teamBPlayers[i])}
-            <select class="form-select" bind:value={teamBPlayers[i]}>
-              <option value="">Player {i + 1}...</option>
-              {#each availablePlayers as player}
-                <option value={player.id}>{player.name}</option>
+          <select class="form-select" value={teamBPlayer1} on:change={(e) => teamBPlayer1 = e.target.value}>
+            <option value="">Select player...</option>
+            {#each availableForB1 as player (player.id)}
+              <option value={player.id} selected={player.id === teamBPlayer1}>{player.name}</option>
+            {/each}
+          </select>
+          {#if !isSingles}
+            <select class="form-select" value={teamBPlayer2} on:change={(e) => teamBPlayer2 = e.target.value}>
+              <option value="">Select player...</option>
+              {#each availableForB2 as player (player.id)}
+                <option value={player.id} selected={player.id === teamBPlayer2}>{player.name}</option>
               {/each}
             </select>
-          {/each}
+          {/if}
         </div>
       </div>
     </div>
     
-    <button class="btn btn-primary" on:click={startMatch} disabled={loading}>
-      {#if loading}
-        Starting Match...
-      {:else}
-        Start Match
-      {/if}
-    </button>
+    <div style="margin-top: var(--space-xl); padding-top: var(--space-lg);">
+      <button class="btn btn-primary" on:click={startMatch} disabled={loading}>
+        {#if loading}
+          Starting Match...
+        {:else}
+          Start Match
+        {/if}
+      </button>
+    </div>
   </div>
 </div>

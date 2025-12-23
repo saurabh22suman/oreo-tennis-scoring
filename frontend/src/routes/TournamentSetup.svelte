@@ -1,32 +1,47 @@
 <!-- Tournament Setup Screen - Per OTS_Tournament_Spec.md -->
 <script>
-  import { navigate } from '../stores/app.js';
+  import { navigate, venues as venueStore, players as playerStore } from '../stores/app.js';
   import { onMount } from 'svelte';
   
-  let venues = [];
   let selectedVenueId = '';
   let selectedPlayers = [];
-  let availablePlayers = [];
   let loading = true;
   let error = '';
   
+  // Computed values
+  $: numberOfTeams = Math.floor(selectedPlayers.length / 2);
+  $: totalMatches = numberOfTeams > 1 ? (numberOfTeams * (numberOfTeams - 1)) / 2 : 0;
+  $: isValidSelection = selectedPlayers.length >= 4 && selectedPlayers.length % 2 === 0;
+  $: validationMessage = getValidationMessage(selectedPlayers.length);
+  
+  function getValidationMessage(count) {
+    if (count < 4) return `Select at least ${4 - count} more player${4 - count !== 1 ? 's' : ''}`;
+    if (count % 2 !== 0) return 'Select one more player (need even number)';
+    return '';
+  }
+  
   onMount(async () => {
     try {
-      // Fetch venues
-      const venuesRes = await fetch('/api/venues');
-      if (venuesRes.ok) {
-        const venuesData = await venuesRes.json();
-        venues = venuesData.data;
-        if (venues.length > 0) {
-          selectedVenueId = venues[0].id;
+      // Use stores if already populated, otherwise fetch
+      if ($venueStore.length === 0) {
+        const venuesRes = await fetch('/api/venues');
+        if (venuesRes.ok) {
+          const venuesData = await venuesRes.json();
+          venueStore.set(venuesData.data || []);
         }
       }
       
-      // Fetch active players
-      const playersRes = await fetch('/api/players');
-      if (playersRes.ok) {
-        const playersData = await playersRes.json();
-        availablePlayers = playersData.data;
+      if ($playerStore.length === 0) {
+        const playersRes = await fetch('/api/players');
+        if (playersRes.ok) {
+          const playersData = await playersRes.json();
+          playerStore.set(playersData.data || []);
+        }
+      }
+      
+      // Auto-select first venue if available
+      if ($venueStore.length > 0 && !selectedVenueId) {
+        selectedVenueId = $venueStore[0].id;
       }
       
       loading = false;
@@ -44,21 +59,31 @@
     }
   }
   
-  function canProceed() {
-    // Need at least 4 players (minimum for tournament)
-    // Must be even number for doubles
-    return selectedPlayers.length >= 4 && 
-           selectedPlayers.length % 2 === 0 &&
-           selectedVenueId;
+  function selectAll() {
+    // Select all players (if odd, exclude last one)
+    const allIds = $playerStore.map(p => p.id);
+    selectedPlayers = allIds.length % 2 === 0 ? allIds : allIds.slice(0, -1);
   }
   
+  function clearSelection() {
+    selectedPlayers = [];
+  }
+  
+  // Reactive validation for proceed button
+  $: canProceed = isValidSelection && selectedVenueId !== '';
+  
   function proceed() {
-    if (!canProceed()) return;
+    if (!canProceed) return;
+    
+    const selectedVenue = $venueStore.find(v => v.id === selectedVenueId);
     
     // Store tournament setup data
     const tournamentData = {
       venueId: selectedVenueId,
-      playerIds: selectedPlayers
+      venueName: selectedVenue?.name || '',
+      venueSurface: selectedVenue?.surface || '',
+      playerIds: selectedPlayers,
+      players: $playerStore.filter(p => selectedPlayers.includes(p.id))
     };
     
     localStorage.setItem('tournamentSetup', JSON.stringify(tournamentData));
@@ -71,71 +96,158 @@
 </script>
 
 <div class="screen">
-  <div class="container">
-    <div class="screen-header">
-      <button class="btn-back" on:click={goBack}>←</button>
-      <h2>Tournament Setup</h2>
-      <div style="width: 40px;"></div>
-    </div>
-    
+  <div class="header">
+    <button class="header-back" on:click={goBack}>
+      ← Back
+    </button>
+    <h1 class="header-title">New Tournament</h1>
+    <div style="width: 60px;"></div>
+  </div>
+  
+  <div class="content">
     {#if loading}
-      <p class="text-center text-secondary">Loading...</p>
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <p>Loading...</p>
+      </div>
     {:else if error}
-      <p class="text-center text-danger">{error}</p>
+      <div class="error-state">
+        <p>{error}</p>
+        <button class="btn btn-secondary" on:click={() => location.reload()}>
+          Retry
+        </button>
+      </div>
     {:else}
-      <!-- Venue Selection -->
-      <div class="form-section">
-        <label class="form-label">Select Venue</label>
-        <select class="form-select" bind:value={selectedVenueId}>
-          {#each venues as venue}
-            <option value={venue.id}>{venue.name} ({venue.surface})</option>
-          {/each}
-        </select>
+      <!-- Venue Selection Card -->
+      <div class="section-card">
+        <div class="section-header">
+          <span class="section-icon">📍</span>
+          <h2>Select Venue</h2>
+        </div>
+        
+        {#if $venueStore.length === 0}
+          <p class="empty-message">No venues available. Add venues in Admin panel.</p>
+        {:else}
+          <select class="form-select" bind:value={selectedVenueId}>
+            {#each $venueStore as venue}
+              <option value={venue.id}>{venue.name} ({venue.surface})</option>
+            {/each}
+          </select>
+        {/if}
       </div>
       
-      <!-- Player Selection -->
-      <div class="form-section">
-        <label class="form-label">
-          Select Players 
-          <span class="text-secondary">
-            ({selectedPlayers.length} selected - need 4+ even number)
-          </span>
-        </label>
+      <!-- Player Selection Card -->
+      <div class="section-card">
+        <div class="section-header">
+          <span class="section-icon">👥</span>
+          <h2>Select Players</h2>
+        </div>
         
-        {#if availablePlayers.length === 0}
-          <p class="text-secondary">No players available. Please add players in Admin panel.</p>
+        <!-- Selection Status Bar -->
+        <div class="status-bar">
+          <div class="status-count">
+            <span class="count-number">{selectedPlayers.length}</span>
+            <span class="count-label">selected</span>
+          </div>
+          
+          {#if isValidSelection}
+            <div class="status-valid">
+              <span class="valid-icon">✓</span>
+              <span>{numberOfTeams} teams</span>
+            </div>
+          {:else}
+            <div class="status-warning">
+              {validationMessage}
+            </div>
+          {/if}
+          
+          <!-- Quick Actions -->
+          <div class="quick-actions">
+            {#if selectedPlayers.length > 0}
+              <button class="action-btn" on:click={clearSelection}>Clear</button>
+            {/if}
+            {#if selectedPlayers.length < $playerStore.length}
+              <button class="action-btn" on:click={selectAll}>All</button>
+            {/if}
+          </div>
+        </div>
+        
+        {#if $playerStore.length === 0}
+          <p class="empty-message">No players available. Add players in Admin panel.</p>
         {:else}
           <div class="player-grid">
-            {#each availablePlayers as player}
+            {#each $playerStore as player}
               <button
-                class="player-card"
+                class="player-chip"
                 class:selected={selectedPlayers.includes(player.id)}
                 on:click={() => togglePlayer(player.id)}
               >
-                <div class="player-name">{player.name}</div>
                 {#if selectedPlayers.includes(player.id)}
-                  <div class="check-icon">✓</div>
+                  <span class="chip-check">✓</span>
                 {/if}
+                <span class="chip-name">{player.name}</span>
               </button>
             {/each}
           </div>
         {/if}
       </div>
       
-      <!-- Info Box -->
-      <div class="info-box">
-        <p class="text-small">
-          <strong>What's next?</strong><br/>
-          After selecting players, you'll create doubles teams (randomly or manually),
-          then proceed to round-robin matches followed by knockout stage.
-        </p>
-      </div>
+      <!-- Tournament Preview Card (shows when valid selection) -->
+      {#if isValidSelection}
+        <div class="preview-card">
+          <div class="preview-header">
+            <span class="preview-icon">🏆</span>
+            <h3>Tournament Preview</h3>
+          </div>
+          
+          <div class="preview-stats">
+            <div class="stat-item">
+              <span class="stat-value">{numberOfTeams}</span>
+              <span class="stat-label">Teams</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+              <span class="stat-value">{totalMatches}</span>
+              <span class="stat-label">Round Robin Matches</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+              <span class="stat-value">{numberOfTeams >= 4 ? '3' : '1'}</span>
+              <span class="stat-label">{numberOfTeams >= 4 ? 'Semis + Final' : 'Final Only'}</span>
+            </div>
+          </div>
+          
+          <div class="preview-flow">
+            <div class="flow-step">
+              <div class="flow-dot active"></div>
+              <span>Teams</span>
+            </div>
+            <div class="flow-line"></div>
+            <div class="flow-step">
+              <div class="flow-dot"></div>
+              <span>Round Robin</span>
+            </div>
+            <div class="flow-line"></div>
+            <div class="flow-step">
+              <div class="flow-dot"></div>
+              <span>{numberOfTeams >= 4 ? 'Semis' : 'Final'}</span>
+            </div>
+            {#if numberOfTeams >= 4}
+              <div class="flow-line"></div>
+              <div class="flow-step">
+                <div class="flow-dot"></div>
+                <span>Final</span>
+              </div>
+            {/if}
+          </div>
+        </div>
+      {/if}
       
-      <!-- Action Buttons -->
-      <div class="button-group">
+      <!-- Continue Button -->
+      <div class="footer-action">
         <button 
-          class="btn btn-primary btn-full"
-          disabled={!canProceed()}
+          class="btn btn-primary"
+          disabled={!canProceed}
           on:click={proceed}
         >
           Continue to Team Creation
@@ -146,88 +258,378 @@
 </div>
 
 <style>
-  .form-section {
-    margin-bottom: var(--space-xl);
+  .screen {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-primary);
   }
   
-  .form-label {
-    display: block;
-    margin-bottom: var(--space-sm);
-    font-weight: 500;
-    color: var(--text-primary);
-  }
-  
-  .form-select {
-    width: 100%;
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: var(--space-md);
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-    font-size: 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   }
   
-  .player-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: var(--space-sm);
-  }
-  
-  .player-card {
-    position: relative;
-    padding: var(--space-md);
-    background: var(--bg-elevated);
-    border: 2px solid var(--border-color);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: all 0.2s;
-    text-align: center;
-  }
-  
-  .player-card:hover {
-    border-color: var(--primary);
-    background: var(--bg-hover);
-  }
-  
-  .player-card.selected {
-    border-color: var(--primary);
-    background: var(--primary);
-    color: white;
-  }
-  
-  .player-name {
-    font-weight: 500;
-  }
-  
-  .check-icon {
-    position: absolute;
-    top: 4px;
-    right: 8px;
-    font-size: 18px;
-  }
-  
-  .info-box {
-    padding: var(--space-md);
-    background: var(--bg-elevated);
-    border-left: 3px solid var(--primary);
-    border-radius: var(--radius-sm);
-    margin-bottom: var(--space-xl);
-  }
-  
-  .text-small {
+  .header-back {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
     font-size: 14px;
-    line-height: 1.5;
-    margin: 0;
+    cursor: pointer;
+    padding: var(--space-sm);
+  }
+  
+  .header-title {
+    font: var(--font-section);
+    color: var(--text-primary);
+  }
+  
+  .content {
+    flex: 1;
+    padding: var(--space-md);
+    padding-bottom: 100px;
+    overflow-y: auto;
+  }
+  
+  /* Loading & Error States */
+  .loading-state, .error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-xl);
+    gap: var(--space-md);
     color: var(--text-secondary);
   }
   
-  .button-group {
-    display: flex;
-    gap: var(--space-md);
-    margin-top: var(--space-xl);
+  .spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--surface);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
   }
   
-  .btn-full {
-    flex: 1;
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  
+  /* Section Cards */
+  .section-card {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-card);
+    padding: var(--space-lg);
+    margin-bottom: var(--space-md);
+  }
+  
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-md);
+  }
+  
+  .section-icon {
+    font-size: 20px;
+  }
+  
+  .section-header h2 {
+    font: var(--font-section);
+    color: var(--text-primary);
+    margin: 0;
+  }
+  
+  .empty-message {
+    color: var(--text-secondary);
+    font-size: 14px;
+    text-align: center;
+    padding: var(--space-md);
+  }
+  
+  /* Form Select */
+  .form-select {
+    width: 100%;
+    padding: var(--space-md);
+    background: var(--surface);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-btn);
+    color: var(--text-primary);
+    font-size: 16px;
+    cursor: pointer;
+  }
+  
+  .form-select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  
+  /* Status Bar */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-sm) var(--space-md);
+    background: var(--surface);
+    border-radius: var(--radius-btn);
+    margin-bottom: var(--space-md);
+    flex-wrap: wrap;
+  }
+  
+  .status-count {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-xs);
+  }
+  
+  .count-number {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  
+  .count-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  
+  .status-valid {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  
+  .valid-icon {
+    width: 18px;
+    height: 18px;
+    background: var(--accent);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+  }
+  
+  .status-warning {
+    color: #F59E0B;
+    font-size: 13px;
+  }
+  
+  .quick-actions {
+    display: flex;
+    gap: var(--space-xs);
+    margin-left: auto;
+  }
+  
+  .action-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: var(--text-secondary);
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  
+  .action-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: var(--text-primary);
+  }
+  
+  /* Player Grid */
+  .player-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+  }
+  
+  .player-chip {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-sm) var(--space-md);
+    background: var(--surface);
+    border: 2px solid transparent;
+    border-radius: 20px;
+    color: var(--text-primary);
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  
+  .player-chip:hover {
+    border-color: var(--accent);
+    background: rgba(34, 197, 94, 0.1);
+  }
+  
+  .player-chip.selected {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+  
+  .chip-check {
+    font-size: 12px;
+    font-weight: 600;
+  }
+  
+  .chip-name {
+    font-weight: 500;
+  }
+  
+  /* Preview Card */
+  .preview-card {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.05) 100%);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    border-radius: var(--radius-card);
+    padding: var(--space-lg);
+    margin-bottom: var(--space-md);
+  }
+  
+  .preview-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-lg);
+  }
+  
+  .preview-icon {
+    font-size: 24px;
+  }
+  
+  .preview-header h3 {
+    font: var(--font-section);
+    color: var(--text-primary);
+    margin: 0;
+  }
+  
+  .preview-stats {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-lg);
+    margin-bottom: var(--space-lg);
+    flex-wrap: wrap;
+  }
+  
+  .stat-item {
+    text-align: center;
+  }
+  
+  .stat-value {
+    display: block;
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--accent);
+    line-height: 1;
+  }
+  
+  .stat-label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: var(--space-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  
+  .stat-divider {
+    width: 1px;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.1);
+  }
+  
+  /* Tournament Flow */
+  .preview-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    padding: var(--space-md) 0;
+  }
+  
+  .flow-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+  
+  .flow-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 2px solid var(--text-secondary);
+  }
+  
+  .flow-dot.active {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  
+  .flow-step span {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  
+  .flow-line {
+    width: 30px;
+    height: 2px;
+    background: var(--surface);
+    margin-bottom: 20px;
+  }
+  
+  /* Footer Action */
+  .footer-action {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: var(--space-md);
+    background: linear-gradient(transparent, var(--bg-primary) 30%);
+    padding-top: var(--space-xl);
+  }
+  
+  .footer-action .btn {
+    width: 100%;
+  }
+  
+  /* Button Styles */
+  .btn {
+    padding: var(--space-md) var(--space-lg);
+    border-radius: var(--radius-btn);
+    font: var(--font-button);
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+  }
+  
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+  
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+  
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--text-primary);
   }
 </style>

@@ -85,13 +85,15 @@ export function isTieBreak(gamesA, gamesB) {
 // MATCH STATE
 // ═══════════════════════════════════════════════════
 
-export function createMatchState(mode, players, servers = null) {
+export function createMatchState(mode, players, servers = null, bestOf = 3) {
     const isShortFormat = mode === MatchMode.SHORT_FORMAT;
 
     return {
         mode,
         players,
         servers: isShortFormat ? servers : null, // [Player1, Player2, Player3] for short format
+        bestOf: isShortFormat ? bestOf : null, // 3 or 5 for short format
+        gamesToWin: isShortFormat ? Math.ceil(bestOf / 2) : null, // 2 for best of 3, 3 for best of 5
 
         // Current game state
         currentGame: {
@@ -157,19 +159,21 @@ function handleGameWon(matchState, winner) {
     }
 }
 
-// Short format: Best of 3 games
+// Short format: Best of 3 or 5 games
 function handleShortFormatGameWon(state, winner) {
     // Increment games
     if (winner === 'A') state.gamesA++;
     else state.gamesB++;
 
-    // Check match win (first to 2 games)
-    if (state.gamesA === 2) {
+    const gamesToWin = state.gamesToWin || 2; // Default to 2 (best of 3)
+
+    // Check match win
+    if (state.gamesA === gamesToWin) {
         state.winner = 'A';
         state.completed = true;
         return state;
     }
-    if (state.gamesB === 2) {
+    if (state.gamesB === gamesToWin) {
         state.winner = 'B';
         state.completed = true;
         return state;
@@ -234,7 +238,7 @@ function handleStandardGameWon(state, winner) {
 // ═══════════════════════════════════════════════════
 
 export function getMatchDisplay(matchState) {
-    const { mode, currentGame, gamesA, gamesB, setsA, setsB } = matchState;
+    const { mode, currentGame, gamesA, gamesB, setsA, setsB, bestOf } = matchState;
     const pointDisplay = getGameDisplayText(currentGame.pointsA, currentGame.pointsB);
 
     if (mode === MatchMode.SHORT_FORMAT) {
@@ -242,7 +246,8 @@ export function getMatchDisplay(matchState) {
             points: pointDisplay,
             games: { a: gamesA, b: gamesB },
             gameNumber: currentGame.gameNumber,
-            totalGames: 3,
+            totalGames: bestOf || 3,
+            gamesToWin: matchState.gamesToWin || 2,
             server: matchState.servers ? matchState.servers[currentGame.serverIndex] : null
         };
     } else {

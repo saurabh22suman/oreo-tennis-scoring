@@ -1,27 +1,50 @@
 <!-- Match Summary - Screen 5 from ui_design_spec.md -->
 <script>
-  import { onMount } from 'svelte';
-  import { navigate, matchState, players } from '../stores/app.js';
+  import { onMount, onDestroy } from 'svelte';
+  import { navigate, matchState, viewMatchId, isAdmin } from '../stores/app.js';
   import { getMatchSummary } from '../services/api.js';
   import { clearCurrentMatch, clearMatchEvents } from '../services/db.js';
   
   let summary = null;
   let loading = true;
+  let isAdminView = false;
+  let matchId = null;
   
   onMount(async () => {
+    // Check if this is an admin viewing a completed match
+    if ($viewMatchId) {
+      isAdminView = true;
+      matchId = $viewMatchId;
+    } else if ($matchState.id) {
+      matchId = $matchState.id;
+    } else {
+      navigate('home');
+      return;
+    }
+    
     try {
-      summary = await getMatchSummary($matchState.id);
+      summary = await getMatchSummary(matchId);
       loading = false;
     } catch (err) {
       alert('Failed to load summary: ' + err.message);
-      navigate('home');
+      navigate(isAdminView ? 'admin-matches' : 'home');
     }
   });
   
+  onDestroy(() => {
+    // Clear viewMatchId when leaving
+    viewMatchId.set(null);
+  });
+  
   async function finish() {
-    await clearCurrentMatch();
-    await clearMatchEvents($matchState.id);
-    navigate('home');
+    if (isAdminView) {
+      viewMatchId.set(null);
+      navigate('admin-matches');
+    } else {
+      await clearCurrentMatch();
+      await clearMatchEvents(matchId);
+      navigate('home');
+    }
   }
   
   function getPercentage(value, total) {
@@ -118,7 +141,7 @@
     
     <div class="container">
       <button class="btn btn-primary" on:click={finish}>
-        Finish
+        {isAdminView ? 'Back to Matches' : 'Finish'}
       </button>
     </div>
   {/if}
