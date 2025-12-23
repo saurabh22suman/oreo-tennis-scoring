@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ots
+      POSTGRES_USER: ots
+      POSTGRES_PASSWORD: ots_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ots"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://ots:ots_dev_password@postgres:5432/ots?sslmode=disable
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD_HASH: $$2a$$10$$vf9oEmSzPPX203HcdXD.SeewgOnxyo47U3OIe9NLgamJkppbspAaO  # "password123"
+      JWT_SECRET: dev-jwt-secret-change-in-production-min-32-chars
+      PORT: 8080
+      FRONTEND_URL: http://localhost:5173
+      CORS_ORIGIN: http://localhost:5173
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    environment:
+      VITE_API_URL: http://localhost:8080
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
