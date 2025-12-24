@@ -1,7 +1,7 @@
 <!-- Home Screen - Screen 1 from ui_design_spec.md -->
 <script>
-  import { navigate } from '../stores/app.js';
-  import { getCurrentMatch } from '../services/db.js';
+  import { navigate, resetMatch } from '../stores/app.js';
+  import { getCurrentMatch, clearCurrentMatch } from '../services/db.js';
   import { onMount } from 'svelte';
   
   let hasIncompleteMatch = false;
@@ -11,7 +11,11 @@
     hasIncompleteMatch = !!match && !match.completed;
   });
   
-  function startNewMatch() {
+  async function startNewMatch() {
+    // Reset match state to clear any old data
+    resetMatch();
+    // Clear any old match data from IndexedDB
+    await clearCurrentMatch();
     navigate('match-setup');
   }
   
