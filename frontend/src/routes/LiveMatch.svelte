@@ -2,7 +2,7 @@
 <script>
   import { onMount } from 'svelte';
   import { navigate, matchState, players } from '../stores/app.js';
-  import { saveEvent, getCurrentMatch, saveCurrentMatch } from '../services/db.js';
+  import { saveEvent, getCurrentMatch, saveCurrentMatch, clearCurrentMatch } from '../services/db.js';
   import { syncEvents, completeMatch as apiCompleteMatch } from '../services/api.js';
   import { v4 as uuidv4 } from 'uuid';
   import { createMatchState, scorePoint, getMatchDisplay, MatchMode } from '../services/scoring.js';
@@ -112,6 +112,8 @@
   }
   
   async function attemptSync() {
+    // Skip sync for tournament matches (they use local storage only)
+    if ($matchState.isTournamentMatch) return;
     if (syncing || !navigator.onLine) return;
     
     syncing = true;
@@ -143,22 +145,31 @@
   async function endMatch() {
     if (!scoringState?.completed && !confirm('End match and view summary?')) return;
     
-    // Force sync all events
-    syncing = true;
-    try {
-      await syncEvents($matchState.id);
-      await apiCompleteMatch($matchState.id);
-    } catch (err) {
-      if (!confirm('Failed to sync. End match anyway?')) {
-        syncing = false;
-        return;
+    // Check if this is a tournament match
+    const isTournamentMatch = $matchState.isTournamentMatch;
+    
+    // Track if sync was successful
+    let syncSuccessful = false;
+    
+    // Only sync to backend for non-tournament matches
+    if (!isTournamentMatch) {
+      syncing = true;
+      try {
+        await syncEvents($matchState.id);
+        await apiCompleteMatch($matchState.id);
+        syncSuccessful = true;
+      } catch (err) {
+        if (!confirm('Failed to sync. End match anyway?')) {
+          syncing = false;
+          return;
+        }
       }
+      syncing = false;
     }
-    syncing = false;
+    
     showWinnerModal = false;
     
-    // Check if this is a tournament match
-    if ($matchState.isTournamentMatch) {
+    if (isTournamentMatch) {
       // Update tournament data
       const tournamentDataStr = localStorage.getItem('tournamentData');
       if (tournamentDataStr) {
@@ -185,9 +196,24 @@
         localStorage.removeItem('currentTournamentMatch');
       }
       
+      // Clear from IndexedDB so Resume Match doesn't show
+      await clearCurrentMatch();
+      
       navigate('tournament-dashboard');
     } else {
-      navigate('match-summary');
+      // Mark match as completed in IndexedDB so Resume Match doesn't show
+      matchState.update(m => ({ ...m, completed: true }));
+      await saveCurrentMatch($matchState);
+      
+      // Only show summary if sync was successful, otherwise go home
+      if (syncSuccessful) {
+        navigate('match-summary');
+      } else {
+        // Clear match data since we can't show a proper summary
+        await clearCurrentMatch();
+        alert('Match ended. Summary not available (sync failed).');
+        navigate('home');
+      }
     }
   }
 </script>

@@ -1,6 +1,7 @@
 <!-- Tournament Dashboard - Per OTS_Tournament_Spec.md -->
 <script>
   import { navigate, matchState } from '../stores/app.js';
+  import { saveCurrentMatch } from '../services/db.js';
   import { onMount } from 'svelte';
   
   let tournamentData = null;
@@ -90,7 +91,7 @@
   $: tournamentWinner = tournamentComplete && finalMatch ? 
     (finalMatch.winner === finalMatch.teamA.id ? finalMatch.teamA : finalMatch.teamB) : null;
   
-  function startMatch(match) {
+  async function startMatch(match) {
     // Set match to in progress
     match.status = 'in_progress';
     tournamentData.matches = matches;
@@ -101,8 +102,11 @@
     const teamAPlayerIds = match.teamA.players.map(p => p.id);
     const teamBPlayerIds = match.teamB.players.map(p => p.id);
     
-    matchState.update(m => ({
-      ...m,
+    // Generate a local ID for tournament matches (prefixed with 't-')
+    const tournamentMatchId = `t-${Date.now()}-${match.id}`;
+    
+    const matchData = {
+      id: tournamentMatchId,
       venueId: tournamentData.venueId,
       venueName: tournamentData.venueName,
       matchType: 'doubles',
@@ -110,9 +114,20 @@
       bestOf: 3,
       teamA: teamAPlayerIds,
       teamB: teamBPlayerIds,
+      startedAt: new Date().toISOString(),
+      currentServer: teamAPlayerIds[0],
+      serverTeam: 'A',
       isTournamentMatch: true,
-      tournamentMatchId: match.id
-    }));
+      tournamentMatchId: match.id,
+      completed: false,
+      events: [],
+    };
+    
+    // Save to IndexedDB
+    await saveCurrentMatch(matchData);
+    
+    // Update match state
+    matchState.set(matchData);
     
     navigate('live-match');
   }
