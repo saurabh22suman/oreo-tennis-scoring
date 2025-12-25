@@ -3,12 +3,17 @@
   import { onMount } from 'svelte';
   import { navigate, viewMatchId } from '../stores/app.js';
   import { getMatches, deleteMatch } from '../services/api.js';
+  import Modal from '../lib/Modal.svelte';
   
   let matches = [];
   let loading = true;
   let showDeleteModal = false;
   let deleteMatchId = null;
   let deleting = false;
+  
+  // Alert modal state
+  let showAlertModal = false;
+  let alertMessage = '';
   
   onMount(async () => {
     await loadMatches();
@@ -19,7 +24,8 @@
     try {
       matches = await getMatches();
     } catch (err) {
-      alert('Failed to load matches');
+      alertMessage = 'Failed to load matches';
+      showAlertModal = true;
     }
     loading = false;
   }
@@ -53,7 +59,8 @@
       deleteMatchId = null;
       await loadMatches();
     } catch (err) {
-      alert('Failed to delete match');
+      alertMessage = 'Failed to delete match';
+      showAlertModal = true;
     }
     deleting = false;
   }
@@ -209,3 +216,13 @@
     max-width: 150px;
   }
 </style>
+
+<!-- Alert Modal -->
+<Modal 
+  bind:show={showAlertModal}
+  title="Error"
+  message={alertMessage}
+  icon="❌"
+  type="alert"
+  confirmText="OK"
+/>

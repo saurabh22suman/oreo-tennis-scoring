@@ -2,17 +2,26 @@
 import { openDB } from 'idb';
 
 const DB_NAME = 'ots-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Bumped for new schema
+
+// Match expiry time: 1 day in milliseconds
+const MATCH_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 let dbPromise = null;
 
 export function getDB() {
     if (!dbPromise) {
         dbPromise = openDB(DB_NAME, DB_VERSION, {
-            upgrade(db) {
-                // Store for current match state
+            upgrade(db, oldVersion) {
+                // Store for current match state (legacy - keep for migration)
                 if (!db.objectStoreNames.contains('currentMatch')) {
                     db.createObjectStore('currentMatch', { keyPath: 'id' });
+                }
+
+                // Store for multiple incomplete matches (new in v2)
+                if (!db.objectStoreNames.contains('incompleteMatches')) {
+                    const matchStore = db.createObjectStore('incompleteMatches', { keyPath: 'matchId' });
+                    matchStore.createIndex('createdAt', 'createdAt');
                 }
 
                 // Store for match events (offline queue)
@@ -38,22 +47,121 @@ export function getDB() {
 }
 
 // ═══════════════════════════════════════════════════
-// CURRENT MATCH
+// CURRENT MATCH (Legacy - for backward compatibility)
 // ═══════════════════════════════════════════════════
 
 export async function saveCurrentMatch(match) {
     const db = await getDB();
+    // Save to legacy store
     await db.put('currentMatch', { ...match, id: 'current' });
+    
+    // Also save to new incompleteMatches store if it has a matchId
+    if (match.matchId || match.id) {
+        const matchId = match.matchId || match.id;
+        await saveIncompleteMatch(matchId, match);
+    }
 }
 
 export async function getCurrentMatch() {
-    const db = await getDB();
-    return await db.get('currentMatch', 'current');
+    try {
+        const db = await getDB();
+        return await db.get('currentMatch', 'current');
+    } catch (err) {
+        console.error('Failed to get current match:', err);
+        return null;
+    }
 }
 
 export async function clearCurrentMatch() {
+    try {
+        const db = await getDB();
+        await db.delete('currentMatch', 'current');
+    } catch (err) {
+        console.error('Failed to clear current match:', err);
+    }
+}
+
+// ═══════════════════════════════════════════════════
+// INCOMPLETE MATCHES (Multiple match support)
+// ═══════════════════════════════════════════════════
+
+export async function saveIncompleteMatch(matchId, matchData) {
     const db = await getDB();
-    await db.delete('currentMatch', 'current');
+    const existing = await db.get('incompleteMatches', matchId);
+    
+    // Normalize venue data - it might be an object or just venueId/venueName
+    const venue = matchData.venue || {
+        id: matchData.venueId,
+        name: matchData.venueName || 'Unknown venue',
+    };
+    
+    await db.put('incompleteMatches', {
+        matchId,
+        venue,
+        matchType: matchData.matchType,
+        formatMode: matchData.matchMode || matchData.formatMode,
+        teamA: matchData.teamA,
+        teamB: matchData.teamB,
+        score: matchData.score,
+        events: matchData.events,
+        currentServer: matchData.currentServer,
+        serverTeam: matchData.serverTeam,
+        completed: matchData.completed || false,
+        createdAt: existing?.createdAt || Date.now(),
+        updatedAt: Date.now(),
+    });
+}
+
+export async function getIncompleteMatch(matchId) {
+    const db = await getDB();
+    return await db.get('incompleteMatches', matchId);
+}
+
+export async function getAllIncompleteMatches() {
+    try {
+        const db = await getDB();
+        // Clean up expired matches first
+        await cleanupExpiredMatches();
+        // Return remaining matches sorted by most recent
+        const matches = await db.getAll('incompleteMatches');
+        return matches
+            .filter(m => !m.completed)
+            .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
+    } catch (err) {
+        console.error('Failed to get incomplete matches:', err);
+        return [];
+    }
+}
+
+export async function deleteIncompleteMatch(matchId) {
+    try {
+        const db = await getDB();
+        await db.delete('incompleteMatches', matchId);
+        // Also clear events for this match
+        await clearMatchEvents(matchId);
+    } catch (err) {
+        console.error('Failed to delete incomplete match:', err);
+    }
+}
+
+export async function cleanupExpiredMatches() {
+    try {
+        const db = await getDB();
+        const now = Date.now();
+        const tx = db.transaction('incompleteMatches', 'readwrite');
+        const matches = await tx.store.getAll();
+        
+        for (const match of matches) {
+            const age = now - (match.createdAt || 0);
+            if (age > MATCH_EXPIRY_MS) {
+                await tx.store.delete(match.matchId);
+                // Note: events will be cleaned up separately
+            }
+        }
+        await tx.done;
+    } catch (err) {
+        console.error('Failed to cleanup expired matches:', err);
+    }
 }
 
 // ═══════════════════════════════════════════════════

@@ -19,6 +19,7 @@
   import AdminPlayers from './routes/AdminPlayers.svelte';
   import AdminVenues from './routes/AdminVenues.svelte';
   import AdminMatches from './routes/AdminMatches.svelte';
+  import Analytics from './routes/Analytics.svelte';
   
   let screen = 'home';
   
@@ -82,6 +83,8 @@
     <AdminVenues />
   {:else if screen === 'admin-matches'}
     <AdminMatches />
+  {:else if screen === 'analytics'}
+    <Analytics />
   {:else}
     <Home />
   {/if}

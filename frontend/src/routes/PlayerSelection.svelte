@@ -3,12 +3,17 @@
   import { navigate, matchState, players } from '../stores/app.js';
   import { createMatch } from '../services/api.js';
   import { saveCurrentMatch } from '../services/db.js';
+  import Modal from '../lib/Modal.svelte';
   
   let teamAPlayer1 = '';
   let teamAPlayer2 = '';
   let teamBPlayer1 = '';
   let teamBPlayer2 = '';
   let loading = false;
+  
+  // Modal states
+  let showAlertModal = false;
+  let alertMessage = '';
   
   $: isSingles = $matchState.matchType === 'singles';
   $: requiredPlayers = isSingles ? 1 : 2;
@@ -48,14 +53,16 @@
     const teamBFiltered = teamB.filter(p => p);
     
     if (teamAFiltered.length !== requiredPlayers || teamBFiltered.length !== requiredPlayers) {
-      alert(`Please select ${requiredPlayers} player(s) for each team`);
+      alertMessage = `Please select ${requiredPlayers} player(s) for each team`;
+      showAlertModal = true;
       return;
     }
     
     // Check for duplicates
     const allSelected = [...teamAFiltered, ...teamBFiltered];
     if (new Set(allSelected).size !== allSelected.length) {
-      alert('Cannot select the same player multiple times');
+      alertMessage = 'Cannot select the same player multiple times';
+      showAlertModal = true;
       return;
     }
     
@@ -100,7 +107,8 @@
       
       navigate('live-match');
     } catch (err) {
-      alert('Failed to create match: ' + err.message);
+      alertMessage = 'Failed to create match: ' + err.message;
+      showAlertModal = true;
       loading = false;
     }
   }
@@ -171,3 +179,13 @@
     </div>
   </div>
 </div>
+
+<!-- Alert Modal -->
+<Modal 
+  bind:show={showAlertModal}
+  title="Oops!"
+  message={alertMessage}
+  icon="⚠️"
+  type="alert"
+  confirmText="OK"
+/>

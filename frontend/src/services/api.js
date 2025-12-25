@@ -112,6 +112,10 @@ export async function updateVenue(id, data) {
     });
 }
 
+export async function getVenueTendencies(venueId) {
+    return await request(`/api/venues/${venueId}/tendencies`);
+}
+
 // ═══════════════════════════════════════════════════
 // MATCHES
 // ═══════════════════════════════════════════════════

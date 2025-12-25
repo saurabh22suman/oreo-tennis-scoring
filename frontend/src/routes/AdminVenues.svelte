@@ -3,12 +3,17 @@
   import { onMount } from 'svelte';
   import { navigate } from '../stores/app.js';
   import { getAdminVenues, createVenue, updateVenue } from '../services/api.js';
+  import Modal from '../lib/Modal.svelte';
   
   let venues = [];
   let loading = true;
   let showAdd = false;
   let newVenueName = '';
   let newVenueSurface = 'hard';
+  
+  // Modal state
+  let showAlertModal = false;
+  let alertMessage = '';
   
   onMount(async () => {
     await loadVenues();
@@ -19,7 +24,8 @@
     try {
       venues = await getAdminVenues();
     } catch (err) {
-      alert('Failed to load venues');
+      alertMessage = 'Failed to load venues';
+      showAlertModal = true;
     }
     loading = false;
   }
@@ -38,7 +44,8 @@
       showAdd = false;
       await loadVenues();
     } catch (err) {
-      alert('Failed to create venue');
+      alertMessage = 'Failed to create venue';
+      showAlertModal = true;
     }
   }
   
@@ -47,7 +54,8 @@
       await updateVenue(venue.id, { active: !venue.active });
       await loadVenues();
     } catch (err) {
-      alert('Failed to update venue');
+      alertMessage = 'Failed to update venue';
+      showAlertModal = true;
     }
   }
 </script>
@@ -115,3 +123,13 @@
     {/if}
   </div>
 </div>
+
+<!-- Alert Modal -->
+<Modal 
+  bind:show={showAlertModal}
+  title="Error"
+  message={alertMessage}
+  icon="❌"
+  type="alert"
+  confirmText="OK"
+/>
