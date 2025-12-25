@@ -2,15 +2,21 @@
 <script>
   import { onMount } from 'svelte';
   import { navigate, matchState, players } from '../stores/app.js';
-  import { saveEvent, getCurrentMatch, saveCurrentMatch, clearCurrentMatch } from '../services/db.js';
+  import { saveEvent, getCurrentMatch, saveCurrentMatch, clearCurrentMatch, deleteIncompleteMatch } from '../services/db.js';
   import { syncEvents, completeMatch as apiCompleteMatch } from '../services/api.js';
   import { v4 as uuidv4 } from 'uuid';
   import { createMatchState, scorePoint, getMatchDisplay, MatchMode } from '../services/scoring.js';
+  import Modal from '../lib/Modal.svelte';
   
   let syncing = false;
   let autoSyncInterval;
   let scoringState = null;
   let showWinnerModal = false;
+  
+  // Modal states
+  let showEndMatchModal = false;
+  let showSyncFailedModal = false;
+  let showSyncFailedAlertModal = false;
   
   $: serverPlayer = $players.find(p => p.id === $matchState.currentServer);
   $: serverTeam = $matchState.serverTeam;
@@ -101,6 +107,19 @@
       events: [...m.events, event],
     }));
     
+    // Save match state with current score for resume functionality
+    saveCurrentMatch({
+      ...$matchState,
+      score: scoringState ? {
+        pointsA: scoringState.score?.pointsA || 0,
+        pointsB: scoringState.score?.pointsB || 0,
+        gamesA: scoringState.score?.gamesA || 0,
+        gamesB: scoringState.score?.gamesB || 0,
+        setsA: scoringState.score?.setsA || 0,
+        setsB: scoringState.score?.setsB || 0,
+      } : null,
+    });
+    
     // Check if match is now complete
     if (scoringState?.completed) {
       // Show winner modal
@@ -139,11 +158,31 @@
       serverTeam: nextTeam,
     }));
     
-    saveCurrentMatch($matchState);
+    saveCurrentMatch({
+      ...$matchState,
+      score: scoringState ? {
+        pointsA: scoringState.score?.pointsA || 0,
+        pointsB: scoringState.score?.pointsB || 0,
+        gamesA: scoringState.score?.gamesA || 0,
+        gamesB: scoringState.score?.gamesB || 0,
+        setsA: scoringState.score?.setsA || 0,
+        setsB: scoringState.score?.setsB || 0,
+      } : null,
+    });
   }
   
-  async function endMatch() {
-    if (!scoringState?.completed && !confirm('End match and view summary?')) return;
+  function requestEndMatch() {
+    if (scoringState?.completed) {
+      // Match is already complete, proceed directly
+      doEndMatch();
+    } else {
+      // Show confirmation modal
+      showEndMatchModal = true;
+    }
+  }
+  
+  async function doEndMatch() {
+    showEndMatchModal = false;
     
     // Check if this is a tournament match
     const isTournamentMatch = $matchState.isTournamentMatch;
@@ -159,10 +198,9 @@
         await apiCompleteMatch($matchState.id);
         syncSuccessful = true;
       } catch (err) {
-        if (!confirm('Failed to sync. End match anyway?')) {
-          syncing = false;
-          return;
-        }
+        syncing = false;
+        showSyncFailedModal = true;
+        return;
       }
       syncing = false;
     }
@@ -198,6 +236,9 @@
       
       // Clear from IndexedDB so Resume Match doesn't show
       await clearCurrentMatch();
+      if ($matchState.id) {
+        await deleteIncompleteMatch($matchState.id);
+      }
       
       navigate('tournament-dashboard');
     } else {
@@ -207,14 +248,37 @@
       
       // Only show summary if sync was successful, otherwise go home
       if (syncSuccessful) {
+        // Remove from incomplete matches list
+        if ($matchState.id) {
+          await deleteIncompleteMatch($matchState.id);
+        }
         navigate('match-summary');
       } else {
-        // Clear match data since we can't show a proper summary
+        // This shouldn't happen in normal flow since sync failure shows modal
         await clearCurrentMatch();
-        alert('Match ended. Summary not available (sync failed).');
+        if ($matchState.id) {
+          await deleteIncompleteMatch($matchState.id);
+        }
         navigate('home');
       }
     }
+  }
+  
+  async function endMatchWithoutSync() {
+    showSyncFailedModal = false;
+    
+    // Clear match data since we can't show a proper summary
+    await clearCurrentMatch();
+    if ($matchState.id) {
+      await deleteIncompleteMatch($matchState.id);
+    }
+    
+    showSyncFailedAlertModal = true;
+  }
+  
+  function handleSyncFailedAlertClose() {
+    showSyncFailedAlertModal = false;
+    navigate('home');
   }
 </script>
 
@@ -330,7 +394,7 @@
   <!-- End Match Button -->
   <button 
     class="btn btn-ghost" 
-    on:click={endMatch}
+    on:click={requestEndMatch}
     style="margin-top: var(--space-md);"
     disabled={syncing}
   >
@@ -345,12 +409,47 @@
       <div class="modal-icon">🏆</div>
       <h2 class="modal-title">{scoringState?.winner === 'A' ? 'Team A' : 'Team B'} Wins!</h2>
       <p class="modal-subtitle">Congratulations!</p>
-      <button class="btn btn-primary modal-btn" on:click={endMatch}>
+      <button class="btn btn-primary modal-btn" on:click={requestEndMatch}>
         View Summary
       </button>
     </div>
   </div>
 {/if}
+
+<!-- End Match Confirmation Modal -->
+<Modal 
+  bind:show={showEndMatchModal}
+  title="End Match?"
+  message="The match is not complete yet. Are you sure you want to end it?"
+  icon="⚠️"
+  type="confirm"
+  confirmText="End Match"
+  cancelText="Continue Playing"
+  on:confirm={doEndMatch}
+/>
+
+<!-- Sync Failed Modal -->
+<Modal 
+  bind:show={showSyncFailedModal}
+  title="Sync Failed"
+  message="Failed to sync match data to server. End match anyway?"
+  icon="⚠️"
+  type="danger"
+  confirmText="End Anyway"
+  cancelText="Keep Playing"
+  on:confirm={endMatchWithoutSync}
+/>
+
+<!-- Sync Failed Alert Modal -->
+<Modal 
+  bind:show={showSyncFailedAlertModal}
+  title="Match Ended"
+  message="Summary not available because sync failed."
+  icon="ℹ️"
+  type="alert"
+  confirmText="OK"
+  on:confirm={handleSyncFailedAlertClose}
+/>
 
 <style>
   .modal-overlay {

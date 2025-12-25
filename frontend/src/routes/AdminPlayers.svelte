@@ -3,11 +3,16 @@
   import { onMount } from 'svelte';
   import { navigate } from '../stores/app.js';
   import { getAdminPlayers, createPlayer, updatePlayer } from '../services/api.js';
+  import Modal from '../lib/Modal.svelte';
   
   let players = [];
   let loading = true;
   let showAdd = false;
   let newPlayerName = '';
+  
+  // Modal state
+  let showAlertModal = false;
+  let alertMessage = '';
   
   onMount(async () => {
     await loadPlayers();
@@ -18,7 +23,8 @@
     try {
       players = await getAdminPlayers();
     } catch (err) {
-      alert('Failed to load players');
+      alertMessage = 'Failed to load players';
+      showAlertModal = true;
     }
     loading = false;
   }
@@ -36,7 +42,8 @@
       showAdd = false;
       await loadPlayers();
     } catch (err) {
-      alert('Failed to create player');
+      alertMessage = 'Failed to create player';
+      showAlertModal = true;
     }
   }
   
@@ -45,7 +52,8 @@
       await updatePlayer(player.id, { active: !player.active });
       await loadPlayers();
     } catch (err) {
-      alert('Failed to update player');
+      alertMessage = 'Failed to update player';
+      showAlertModal = true;
     }
   }
 </script>
@@ -107,3 +115,13 @@
     {/if}
   </div>
 </div>
+
+<!-- Alert Modal -->
+<Modal 
+  bind:show={showAlertModal}
+  title="Error"
+  message={alertMessage}
+  icon="❌"
+  type="alert"
+  confirmText="OK"
+/>

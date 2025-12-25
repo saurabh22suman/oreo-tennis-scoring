@@ -99,8 +99,12 @@ type MatchSummary struct {
 	MatchType   MatchType          `json:"match_type"`
 	StartedAt   time.Time          `json:"started_at"`
 	EndedAt     *time.Time         `json:"ended_at,omitempty"`
-	TeamAScore  int                `json:"team_a_score"`
-	TeamBScore  int                `json:"team_b_score"`
+	TeamAScore  int                `json:"team_a_score"`  // Total points
+	TeamBScore  int                `json:"team_b_score"`  // Total points
+	GamesA      int                `json:"games_a"`       // Games won by Team A
+	GamesB      int                `json:"games_b"`       // Games won by Team B
+	SetsA       int                `json:"sets_a"`        // Sets won by Team A (standard mode only)
+	SetsB       int                `json:"sets_b"`        // Sets won by Team B (standard mode only)
 	PlayerStats []PlayerMatchStats `json:"player_stats"`
 }
 

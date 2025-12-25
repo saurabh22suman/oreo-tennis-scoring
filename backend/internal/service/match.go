@@ -222,6 +222,9 @@ func (s *MatchService) GetMatchSummary(ctx context.Context, matchID uuid.UUID) (
 		playerStats = append(playerStats, *stat)
 	}
 
+	// Compute games and sets by replaying events through scoring logic
+	gamesA, gamesB, setsA, setsB := computeGamesAndSets(events)
+
 	return &model.MatchSummary{
 		MatchID:     matchID,
 		Venue:       *venue,
@@ -230,8 +233,65 @@ func (s *MatchService) GetMatchSummary(ctx context.Context, matchID uuid.UUID) (
 		EndedAt:     match.EndedAt,
 		TeamAScore:  teamAScore,
 		TeamBScore:  teamBScore,
+		GamesA:      gamesA,
+		GamesB:      gamesB,
+		SetsA:       setsA,
+		SetsB:       setsB,
 		PlayerStats: playerStats,
 	}, nil
+}
+
+// computeGamesAndSets replays point events to calculate games and sets won.
+// Uses simplified tennis scoring logic to derive game/set counts from raw points.
+func computeGamesAndSets(events []model.PointEvent) (gamesA, gamesB, setsA, setsB int) {
+	// Track points in current game
+	pointsA := 0
+	pointsB := 0
+	
+	// Track games in current set
+	gamesInSetA := 0
+	gamesInSetB := 0
+	
+	for _, event := range events {
+		// Count point
+		if event.PointWinnerTeam == model.TeamA {
+			pointsA++
+		} else {
+			pointsB++
+		}
+		
+		// Check if game is won (simplified: 4 points with 2 point lead)
+		gameWonByA := pointsA >= 4 && pointsA-pointsB >= 2
+		gameWonByB := pointsB >= 4 && pointsB-pointsA >= 2
+		
+		if gameWonByA {
+			gamesA++
+			gamesInSetA++
+			pointsA = 0
+			pointsB = 0
+			
+			// Check if set is won (6 games with 2 game lead, or 7-5, or tiebreak 7-6)
+			if (gamesInSetA >= 6 && gamesInSetA-gamesInSetB >= 2) || gamesInSetA == 7 {
+				setsA++
+				gamesInSetA = 0
+				gamesInSetB = 0
+			}
+		} else if gameWonByB {
+			gamesB++
+			gamesInSetB++
+			pointsA = 0
+			pointsB = 0
+			
+			// Check if set is won
+			if (gamesInSetB >= 6 && gamesInSetB-gamesInSetA >= 2) || gamesInSetB == 7 {
+				setsB++
+				gamesInSetA = 0
+				gamesInSetB = 0
+			}
+		}
+	}
+	
+	return gamesA, gamesB, setsA, setsB
 }
 
 // DeleteMatch removes a match.

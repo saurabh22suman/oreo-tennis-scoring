@@ -45,9 +45,11 @@ func main() {
 	playerRepo := repository.NewPlayerRepository(pool)
 	venueRepo := repository.NewVenueRepository(pool)
 	matchRepo := repository.NewMatchRepository(pool)
+	tendenciesRepo := repository.NewTendenciesRepository(pool)
 
 	// Initialize services
 	matchSvc := service.NewMatchService(matchRepo, playerRepo, venueRepo)
+	tendenciesSvc := service.NewTendenciesService(tendenciesRepo, venueRepo)
 
 	// Initialize auth
 	jwtService := auth.NewJWTService(cfg.JWTSecret)
@@ -60,6 +62,7 @@ func main() {
 	playerHandler := handler.NewPlayerHandler(playerRepo)
 	venueHandler := handler.NewVenueHandler(venueRepo)
 	matchHandler := handler.NewMatchHandler(matchSvc, matchRepo)
+	tendenciesHandler := handler.NewTendenciesHandler(tendenciesSvc)
 
 	// Initialize middleware
 	authMiddleware := middleware.NewAuthMiddleware(jwtService)
@@ -109,6 +112,17 @@ func main() {
 	mux.HandleFunc("/api/players", playerHandler.List)
 	mux.HandleFunc("/api/venues", venueHandler.List)
 	mux.HandleFunc("/api/matches", matchHandler.Create)
+
+	// Venue-specific routes need path parsing
+	mux.HandleFunc("/api/venues/", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		switch {
+		case strings.HasSuffix(path, "/tendencies"):
+			tendenciesHandler.GetVenueTendencies(w, r)
+		default:
+			handler.WriteError(w, http.StatusNotFound, "not found")
+		}
+	})
 
 	// Match-specific routes need path parsing
 	mux.HandleFunc("/api/matches/", func(w http.ResponseWriter, r *http.Request) {
