@@ -51,8 +51,9 @@ var validTeams = map[model.Team]bool{
 
 // validMatchTypes is a set of valid match types.
 var validMatchTypes = map[model.MatchType]bool{
-	model.MatchTypeSingles: true,
-	model.MatchTypeDoubles: true,
+	model.MatchTypeSingles:           true,
+	model.MatchTypeDoubles:           true,
+	model.MatchTypeAustralianDoubles: true,
 }
 
 // Create starts a new match.
@@ -75,7 +76,7 @@ func (h *MatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !validMatchTypes[req.MatchType] {
-		WriteError(w, http.StatusBadRequest, "match_type must be singles or doubles")
+		WriteError(w, http.StatusBadRequest, "match_type must be singles, doubles, or 1v2")
 		return
 	}
 

@@ -55,6 +55,11 @@ func (s *MatchService) CreateMatch(ctx context.Context, req CreateMatchRequest) 
 		if len(req.TeamA) != 2 || len(req.TeamB) != 2 {
 			return nil, fmt.Errorf("doubles match requires exactly 2 players per team")
 		}
+	} else if req.MatchType == model.MatchTypeAustralianDoubles {
+		// 1v2 format: Team A has 1 player, Team B has 2 players
+		if len(req.TeamA) != 1 || len(req.TeamB) != 2 {
+			return nil, fmt.Errorf("1v2 match requires exactly 1 player on team A and 2 players on team B")
+		}
 	} else {
 		return nil, fmt.Errorf("invalid match type")
 	}

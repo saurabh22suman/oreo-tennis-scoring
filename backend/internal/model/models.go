@@ -15,12 +15,13 @@ const (
 	SurfaceGrass Surface = "grass"
 )
 
-// MatchType represents singles or doubles.
+// MatchType represents singles, doubles, or 1v2 (Australian Doubles).
 type MatchType string
 
 const (
-	MatchTypeSingles MatchType = "singles"
-	MatchTypeDoubles MatchType = "doubles"
+	MatchTypeSingles           MatchType = "singles"
+	MatchTypeDoubles           MatchType = "doubles"
+	MatchTypeAustralianDoubles MatchType = "1v2"
 )
 
 // Team represents team A or B.
