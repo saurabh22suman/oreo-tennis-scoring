@@ -3,10 +3,18 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// DateFilter represents a date range filter for tendencies queries.
+type DateFilter struct {
+	Enabled   bool
+	StartDate time.Time
+	EndDate   time.Time
+}
 
 // TendenciesRepository handles venue tendency database operations.
 type TendenciesRepository struct {
@@ -49,10 +57,18 @@ type PlayerMatchStats struct {
 
 // GetTeamStatsAtVenue retrieves aggregated team statistics for a venue.
 // Returns only doubles teams that have played at this venue.
-func (r *TendenciesRepository) GetTeamStatsAtVenue(ctx context.Context, venueID uuid.UUID) ([]TeamMatchStats, error) {
+func (r *TendenciesRepository) GetTeamStatsAtVenue(ctx context.Context, venueID uuid.UUID, dateFilter DateFilter) ([]TeamMatchStats, error) {
+	// Build date filter condition
+	dateCondition := ""
+	args := []interface{}{venueID}
+	if dateFilter.Enabled {
+		dateCondition = "AND m.ended_at >= $2 AND m.ended_at < $3"
+		args = append(args, dateFilter.StartDate, dateFilter.EndDate)
+	}
+
 	// Query to get all doubles teams and their match counts at the venue.
 	// A team is identified by the pair of player IDs (sorted to ensure consistency).
-	query := `
+	query := fmt.Sprintf(`
 		WITH doubles_matches AS (
 			-- Get all completed doubles matches at this venue
 			SELECT m.id as match_id
@@ -60,6 +76,7 @@ func (r *TendenciesRepository) GetTeamStatsAtVenue(ctx context.Context, venueID 
 			WHERE m.venue_id = $1
 			  AND m.match_type = 'doubles'
 			  AND m.ended_at IS NOT NULL
+			  %s
 		),
 		team_compositions AS (
 			-- Get team compositions for each match
@@ -114,9 +131,9 @@ func (r *TendenciesRepository) GetTeamStatsAtVenue(ctx context.Context, venueID 
 		FROM team_matches
 		GROUP BY player1_id, player2_id, player1_name, player2_name
 		ORDER BY player1_name, player2_name
-	`
+	`, dateCondition)
 
-	rows, err := r.pool.Query(ctx, query, venueID)
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get team stats: %w", err)
 	}
@@ -146,8 +163,16 @@ func (r *TendenciesRepository) GetTeamStatsAtVenue(ctx context.Context, venueID 
 }
 
 // GetTeamServeStatsAtVenue retrieves first serve stats for teams at a venue.
-func (r *TendenciesRepository) GetTeamServeStatsAtVenue(ctx context.Context, venueID uuid.UUID, player1ID, player2ID uuid.UUID) (firstServesIn, firstServesTotal, firstServePointsWon int, err error) {
-	query := `
+func (r *TendenciesRepository) GetTeamServeStatsAtVenue(ctx context.Context, venueID uuid.UUID, player1ID, player2ID uuid.UUID, dateFilter DateFilter) (firstServesIn, firstServesTotal, firstServePointsWon int, err error) {
+	// Build date filter condition
+	dateCondition := ""
+	args := []interface{}{venueID, player1ID, player2ID}
+	if dateFilter.Enabled {
+		dateCondition = "AND m.ended_at >= $4 AND m.ended_at < $5"
+		args = append(args, dateFilter.StartDate, dateFilter.EndDate)
+	}
+
+	query := fmt.Sprintf(`
 		SELECT 
 			COALESCE(SUM(CASE WHEN pe.serve_type = 'first' THEN 1 ELSE 0 END), 0) as first_serves_in,
 			COALESCE(SUM(CASE WHEN pe.serve_type IN ('first', 'second', 'double_fault') THEN 1 ELSE 0 END), 0) as first_serves_total,
@@ -169,9 +194,10 @@ func (r *TendenciesRepository) GetTeamServeStatsAtVenue(ctx context.Context, ven
 			  AND mp1.player_id = $2 
 			  AND mp2.player_id = $3
 		  )
-	`
+		  %s
+	`, dateCondition)
 
-	err = r.pool.QueryRow(ctx, query, venueID, player1ID, player2ID).Scan(
+	err = r.pool.QueryRow(ctx, query, args...).Scan(
 		&firstServesIn,
 		&firstServesTotal,
 		&firstServePointsWon,
@@ -183,14 +209,23 @@ func (r *TendenciesRepository) GetTeamServeStatsAtVenue(ctx context.Context, ven
 }
 
 // GetPlayerStatsAtVenue retrieves aggregated player statistics for a venue.
-func (r *TendenciesRepository) GetPlayerStatsAtVenue(ctx context.Context, venueID uuid.UUID) ([]PlayerMatchStats, error) {
-	query := `
+func (r *TendenciesRepository) GetPlayerStatsAtVenue(ctx context.Context, venueID uuid.UUID, dateFilter DateFilter) ([]PlayerMatchStats, error) {
+	// Build date filter condition
+	dateCondition := ""
+	args := []interface{}{venueID}
+	if dateFilter.Enabled {
+		dateCondition = "AND m.ended_at >= $2 AND m.ended_at < $3"
+		args = append(args, dateFilter.StartDate, dateFilter.EndDate)
+	}
+
+	query := fmt.Sprintf(`
 		WITH venue_matches AS (
 			-- Get all completed matches at this venue
 			SELECT m.id as match_id
 			FROM matches m
 			WHERE m.venue_id = $1
 			  AND m.ended_at IS NOT NULL
+			  %s
 		),
 		player_matches AS (
 			-- Get distinct matches per player at venue
@@ -239,9 +274,9 @@ func (r *TendenciesRepository) GetPlayerStatsAtVenue(ctx context.Context, venueI
 		LEFT JOIN player_serve_stats pss ON pss.player_id = pm.player_id
 		LEFT JOIN player_points pp ON pp.player_id = pm.player_id
 		ORDER BY pm.player_name
-	`
+	`, dateCondition)
 
-	rows, err := r.pool.Query(ctx, query, venueID)
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get player stats: %w", err)
 	}

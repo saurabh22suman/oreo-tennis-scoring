@@ -112,8 +112,27 @@ export async function updateVenue(id, data) {
     });
 }
 
-export async function getVenueTendencies(venueId) {
-    return await request(`/api/venues/${venueId}/tendencies`);
+export async function getVenueTendencies(venueId, dateFilter = {}) {
+    let endpoint = `/api/venues/${venueId}/tendencies`;
+    
+    // Build query params based on filter
+    const params = new URLSearchParams();
+    
+    if (dateFilter.period) {
+        params.append('period', dateFilter.period);
+        
+        if (dateFilter.period === 'month') {
+            if (dateFilter.month) params.append('month', dateFilter.month);
+            if (dateFilter.year) params.append('year', dateFilter.year);
+        }
+    }
+    
+    const queryString = params.toString();
+    if (queryString) {
+        endpoint += `?${queryString}`;
+    }
+    
+    return await request(endpoint);
 }
 
 // ═══════════════════════════════════════════════════

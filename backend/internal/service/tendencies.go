@@ -4,11 +4,19 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/saurabh22suman/oreo-tennis-scoring/backend/internal/model"
 	"github.com/saurabh22suman/oreo-tennis-scoring/backend/internal/repository"
 )
+
+// DateFilter represents a date range filter for tendencies.
+type DateFilter struct {
+	Enabled   bool
+	StartDate time.Time
+	EndDate   time.Time
+}
 
 // TendenciesService handles venue tendency business logic.
 type TendenciesService struct {
@@ -33,21 +41,28 @@ func NewTendenciesService(
 // - Players: Minimum 5 matches at venue
 // - All metrics are aggregated and deterministic
 // - Results ordered alphabetically (neutral ordering, no rankings)
-func (s *TendenciesService) GetVenueTendencies(ctx context.Context, venueID uuid.UUID) (*model.VenueTendencies, error) {
+func (s *TendenciesService) GetVenueTendencies(ctx context.Context, venueID uuid.UUID, dateFilter DateFilter) (*model.VenueTendencies, error) {
 	// Validate venue exists
 	venue, err := s.venueRepo.GetByID(ctx, venueID)
 	if err != nil {
 		return nil, fmt.Errorf("venue not found: %w", err)
 	}
 
+	// Convert to repository date filter
+	repoFilter := repository.DateFilter{
+		Enabled:   dateFilter.Enabled,
+		StartDate: dateFilter.StartDate,
+		EndDate:   dateFilter.EndDate,
+	}
+
 	// Get team tendencies
-	teamTendencies, err := s.getTeamTendencies(ctx, venueID)
+	teamTendencies, err := s.getTeamTendencies(ctx, venueID, repoFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get team tendencies: %w", err)
 	}
 
 	// Get player tendencies
-	playerTendencies, err := s.getPlayerTendencies(ctx, venueID)
+	playerTendencies, err := s.getPlayerTendencies(ctx, venueID, repoFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get player tendencies: %w", err)
 	}
@@ -63,8 +78,8 @@ func (s *TendenciesService) GetVenueTendencies(ctx context.Context, venueID uuid
 // getTeamTendencies retrieves and filters team tendencies.
 // Per spec Section 3: Team eligibility requires at least 3 matches at venue.
 // Per spec Section 4: Applies to doubles matches only.
-func (s *TendenciesService) getTeamTendencies(ctx context.Context, venueID uuid.UUID) ([]model.VenueTeamTendency, error) {
-	rawStats, err := s.tendenciesRepo.GetTeamStatsAtVenue(ctx, venueID)
+func (s *TendenciesService) getTeamTendencies(ctx context.Context, venueID uuid.UUID, dateFilter repository.DateFilter) ([]model.VenueTeamTendency, error) {
+	rawStats, err := s.tendenciesRepo.GetTeamStatsAtVenue(ctx, venueID, dateFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +94,7 @@ func (s *TendenciesService) getTeamTendencies(ctx context.Context, venueID uuid.
 
 		// Get serve stats for this team
 		firstServesIn, _, firstServePointsWon, err := s.tendenciesRepo.GetTeamServeStatsAtVenue(
-			ctx, venueID, ts.Player1ID, ts.Player2ID,
+			ctx, venueID, ts.Player1ID, ts.Player2ID, dateFilter,
 		)
 		if err != nil {
 			return nil, err
@@ -134,8 +149,8 @@ func (s *TendenciesService) getTeamTendencies(ctx context.Context, venueID uuid.
 // getPlayerTendencies retrieves and filters player tendencies.
 // Per spec Section 3: Player eligibility requires at least 5 matches at venue.
 // Per spec Section 5: NO win percentage - explicitly forbidden.
-func (s *TendenciesService) getPlayerTendencies(ctx context.Context, venueID uuid.UUID) ([]model.VenuePlayerTendency, error) {
-	rawStats, err := s.tendenciesRepo.GetPlayerStatsAtVenue(ctx, venueID)
+func (s *TendenciesService) getPlayerTendencies(ctx context.Context, venueID uuid.UUID, dateFilter repository.DateFilter) ([]model.VenuePlayerTendency, error) {
+	rawStats, err := s.tendenciesRepo.GetPlayerStatsAtVenue(ctx, venueID, dateFilter)
 	if err != nil {
 		return nil, err
 	}
