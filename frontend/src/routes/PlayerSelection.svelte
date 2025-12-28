@@ -16,7 +16,14 @@
   let alertMessage = '';
   
   $: isSingles = $matchState.matchType === 'singles';
-  $: requiredPlayers = isSingles ? 1 : 2;
+  $: isAustralianDoubles = $matchState.matchType === '1v2';
+  $: isDoubles = $matchState.matchType === 'doubles';
+  
+  // For 1v2: Team A has 1 player, Team B has 2 players
+  // For singles: 1 player each
+  // For doubles: 2 players each
+  $: teamAPlayerCount = isSingles || isAustralianDoubles ? 1 : 2;
+  $: teamBPlayerCount = isSingles ? 1 : 2;
   
   // Filter active players
   $: activePlayers = $players.filter(p => p.active !== false);
@@ -45,15 +52,19 @@
   }
   
   async function startMatch() {
-    // Validate selections
-    const teamA = isSingles ? [teamAPlayer1] : [teamAPlayer1, teamAPlayer2];
-    const teamB = isSingles ? [teamBPlayer1] : [teamBPlayer1, teamBPlayer2];
+    // Validate selections based on match type
+    const teamA = teamAPlayerCount === 1 ? [teamAPlayer1] : [teamAPlayer1, teamAPlayer2];
+    const teamB = teamBPlayerCount === 1 ? [teamBPlayer1] : [teamBPlayer1, teamBPlayer2];
     
     const teamAFiltered = teamA.filter(p => p);
     const teamBFiltered = teamB.filter(p => p);
     
-    if (teamAFiltered.length !== requiredPlayers || teamBFiltered.length !== requiredPlayers) {
-      alertMessage = `Please select ${requiredPlayers} player(s) for each team`;
+    if (teamAFiltered.length !== teamAPlayerCount || teamBFiltered.length !== teamBPlayerCount) {
+      if (isAustralianDoubles) {
+        alertMessage = 'Please select 1 player for Team A and 2 players for Team B';
+      } else {
+        alertMessage = `Please select ${teamAPlayerCount} player(s) for each team`;
+      }
       showAlertModal = true;
       return;
     }
@@ -127,7 +138,7 @@
     <div style="flex: 1; display: flex; flex-direction: column; gap: var(--space-lg);">
       <!-- Team A -->
       <div>
-        <h2 class="mb-md">Team A</h2>
+        <h2 class="mb-md">Team A {#if isAustralianDoubles}<span class="text-secondary" style="font-size: 14px;">(1 player)</span>{/if}</h2>
         <div style="display: flex; flex-direction: column; gap: var(--space-sm);">
           <select class="form-select" value={teamAPlayer1} on:change={(e) => teamAPlayer1 = e.target.value}>
             <option value="">Select player...</option>
@@ -135,7 +146,7 @@
               <option value={player.id} selected={player.id === teamAPlayer1}>{player.name}</option>
             {/each}
           </select>
-          {#if !isSingles}
+          {#if isDoubles}
             <select class="form-select" value={teamAPlayer2} on:change={(e) => teamAPlayer2 = e.target.value}>
               <option value="">Select player...</option>
               {#each availableForA2 as player (player.id)}
@@ -148,7 +159,7 @@
       
       <!-- Team B -->
       <div>
-        <h2 class="mb-md">Team B</h2>
+        <h2 class="mb-md">Team B {#if isAustralianDoubles}<span class="text-secondary" style="font-size: 14px;">(2 players)</span>{/if}</h2>
         <div style="display: flex; flex-direction: column; gap: var(--space-sm);">
           <select class="form-select" value={teamBPlayer1} on:change={(e) => teamBPlayer1 = e.target.value}>
             <option value="">Select player...</option>

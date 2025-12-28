@@ -5,7 +5,7 @@
   import { saveEvent, getCurrentMatch, saveCurrentMatch, clearCurrentMatch, deleteIncompleteMatch } from '../services/db.js';
   import { syncEvents, completeMatch as apiCompleteMatch } from '../services/api.js';
   import { v4 as uuidv4 } from 'uuid';
-  import { createMatchState, scorePoint, getMatchDisplay, MatchMode } from '../services/scoring.js';
+  import { createMatchState, scorePoint, getMatchDisplay, MatchMode, startDeuceTiebreaker } from '../services/scoring.js';
   import Modal from '../lib/Modal.svelte';
   
   let syncing = false;
@@ -21,6 +21,8 @@
   $: serverPlayer = $players.find(p => p.id === $matchState.currentServer);
   $: serverTeam = $matchState.serverTeam;
   $: display = scoringState ? getMatchDisplay(scoringState) : null;
+  $: canStartDeuceTiebreaker = display?.canStartDeuceTiebreaker || false;
+  $: inDeuceTiebreaker = display?.inDeuceTiebreaker || false;
   
   onMount(async () => {
     // Load match from IndexedDB if needed
@@ -168,6 +170,17 @@
         setsA: scoringState.score?.setsA || 0,
         setsB: scoringState.score?.setsB || 0,
       } : null,
+    });
+  }
+  
+  function activateDeuceTiebreaker() {
+    // Switch to best-of-3 points tiebreaker
+    scoringState = startDeuceTiebreaker(scoringState);
+    
+    // Save the updated state
+    saveCurrentMatch({
+      ...$matchState,
+      deuceTiebreaker: scoringState.deuceTiebreaker,
     });
   }
   
@@ -389,6 +402,23 @@
     >
       Double Fault
     </button>
+    
+    <!-- Deuce Tiebreaker Button - shown when in deuce/advantage -->
+    {#if canStartDeuceTiebreaker}
+      <button 
+        class="btn btn-action btn-tiebreaker" 
+        on:click={activateDeuceTiebreaker}
+      >
+        🎯 Switch to Best of 3 Tiebreaker
+      </button>
+    {/if}
+    
+    <!-- Tiebreaker mode indicator -->
+    {#if inDeuceTiebreaker}
+      <div class="tiebreaker-banner">
+        ⚡ Best of 3 Tiebreaker - First to 2 points wins!
+      </div>
+    {/if}
   </div>
   
   <!-- End Match Button -->
@@ -571,5 +601,27 @@
     font-size: 20px;
     font-weight: 600;
     margin-bottom: var(--space-md);
+  }
+  
+  .btn-tiebreaker {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: white;
+    border: none;
+    font-weight: 600;
+  }
+  
+  .btn-tiebreaker:hover {
+    background: linear-gradient(135deg, #d97706, #b45309);
+  }
+  
+  .tiebreaker-banner {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: white;
+    text-align: center;
+    padding: var(--space-sm) var(--space-md);
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    margin-top: var(--space-sm);
   }
 </style>
