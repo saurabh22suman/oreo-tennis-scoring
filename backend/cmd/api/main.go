@@ -142,10 +142,13 @@ func main() {
 	// Apply CORS middleware
 	corsHandler := corsMiddleware.Handler(mux)
 
+	// Apply body size limit middleware (1MB max)
+	limitedHandler := middleware.LimitBody(middleware.MaxBodySize)(corsHandler)
+
 	// Create server
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
-		Handler:      corsHandler,
+		Handler:      limitedHandler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
