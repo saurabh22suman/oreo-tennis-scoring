@@ -15,6 +15,30 @@
   let showPlayers = true;
   let sortBy = 'name'; // 'name', 'matches', 'winrate'
   
+  // Date filter
+  let timePeriod = 'all'; // 'all', 'day', 'week', 'month'
+  let selectedMonth = new Date().getMonth() + 1; // 1-12
+  let selectedYear = new Date().getFullYear();
+  
+  // Month names for display
+  const monthNames = [
+    { value: 1, label: 'January' },
+    { value: 2, label: 'February' },
+    { value: 3, label: 'March' },
+    { value: 4, label: 'April' },
+    { value: 5, label: 'May' },
+    { value: 6, label: 'June' },
+    { value: 7, label: 'July' },
+    { value: 8, label: 'August' },
+    { value: 9, label: 'September' },
+    { value: 10, label: 'October' },
+    { value: 11, label: 'November' },
+    { value: 12, label: 'December' }
+  ];
+  
+  // Generate years for dropdown (current year and 2 previous)
+  $: yearOptions = [selectedYear, selectedYear - 1, selectedYear - 2].map(y => ({ value: y, label: y.toString() }));
+  
   onMount(async () => {
     try {
       venues = await getVenues();
@@ -22,6 +46,23 @@
       console.error('Failed to load venues:', err);
     }
   });
+  
+  // Build date filter object based on selections
+  function buildDateFilter() {
+    if (timePeriod === 'all') {
+      return {};
+    }
+    
+    if (timePeriod === 'month') {
+      return {
+        period: 'month',
+        month: selectedMonth,
+        year: selectedYear
+      };
+    }
+    
+    return { period: timePeriod };
+  }
   
   async function loadTendencies() {
     if (!selectedVenueId) {
@@ -33,7 +74,8 @@
     error = null;
     
     try {
-      tendencies = await getVenueTendencies(selectedVenueId);
+      const dateFilter = buildDateFilter();
+      tendencies = await getVenueTendencies(selectedVenueId, dateFilter);
     } catch (err) {
       error = err.message || 'Failed to load tendencies';
       tendencies = null;
@@ -42,7 +84,10 @@
     }
   }
   
+  // Reload when venue or time period changes
   $: if (selectedVenueId) {
+    // Need to make this reactive to time period changes too
+    timePeriod, selectedMonth, selectedYear;
     loadTendencies();
   }
   
@@ -86,7 +131,59 @@
     </div>
     
     {#if selectedVenueId}
-      <!-- Filter Controls -->
+      <!-- Time Period Filter -->
+      <div class="card mb-md filter-card">
+        <div class="time-filter-section">
+          <span class="filter-label">Time Period:</span>
+          <div class="time-filter-buttons">
+            <button 
+              class="time-btn" 
+              class:active={timePeriod === 'all'} 
+              on:click={() => timePeriod = 'all'}
+            >
+              All Time
+            </button>
+            <button 
+              class="time-btn" 
+              class:active={timePeriod === 'day'} 
+              on:click={() => timePeriod = 'day'}
+            >
+              Today
+            </button>
+            <button 
+              class="time-btn" 
+              class:active={timePeriod === 'week'} 
+              on:click={() => timePeriod = 'week'}
+            >
+              Last 7 Days
+            </button>
+            <button 
+              class="time-btn" 
+              class:active={timePeriod === 'month'} 
+              on:click={() => timePeriod = 'month'}
+            >
+              Month
+            </button>
+          </div>
+          
+          {#if timePeriod === 'month'}
+            <div class="month-selectors">
+              <select class="form-select month-select" bind:value={selectedMonth}>
+                {#each monthNames as m}
+                  <option value={m.value}>{m.label}</option>
+                {/each}
+              </select>
+              <select class="form-select year-select" bind:value={selectedYear}>
+                {#each yearOptions as y}
+                  <option value={y.value}>{y.label}</option>
+                {/each}
+              </select>
+            </div>
+          {/if}
+        </div>
+      </div>
+      
+      <!-- Display Controls -->
       <div class="card mb-md filter-card">
         <div class="filter-row">
           <div class="filter-toggles">
@@ -361,6 +458,81 @@
   @media (max-width: 360px) {
     .stats-grid-4 {
       grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  
+  /* Time Period Filter Styles */
+  .time-filter-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+  
+  .filter-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  
+  .time-filter-buttons {
+    display: flex;
+    gap: var(--space-xs);
+    flex-wrap: wrap;
+  }
+  
+  .time-btn {
+    background: var(--bg-secondary);
+    border: 1px solid var(--surface);
+    color: var(--text-secondary);
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-btn);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  
+  .time-btn:hover {
+    background: var(--surface);
+    color: var(--text-primary);
+  }
+  
+  .time-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg-primary);
+    font-weight: 500;
+  }
+  
+  .month-selectors {
+    display: flex;
+    gap: var(--space-sm);
+    margin-top: var(--space-xs);
+  }
+  
+  .month-select {
+    flex: 2;
+    padding: var(--space-xs) var(--space-sm);
+    font-size: 14px;
+  }
+  
+  .year-select {
+    flex: 1;
+    padding: var(--space-xs) var(--space-sm);
+    font-size: 14px;
+  }
+  
+  @media (max-width: 360px) {
+    .time-filter-buttons {
+      flex-direction: column;
+    }
+    
+    .time-btn {
+      text-align: center;
+    }
+    
+    .month-selectors {
+      flex-direction: column;
     }
   }
 </style>
