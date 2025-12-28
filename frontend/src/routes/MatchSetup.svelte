@@ -68,7 +68,19 @@
           >
             Doubles
           </button>
+          <button 
+            class="toggle-btn" 
+            class:active={selectedType === '1v2'}
+            on:click={() => selectedType = '1v2'}
+          >
+            1 vs 2
+          </button>
         </div>
+        {#if selectedType === '1v2'}
+          <p class="text-secondary" style="font-size: 13px; margin-top: var(--space-sm);">
+            Australian Doubles: 1 player vs 2 players
+          </p>
+        {/if}
       </div>
       
       <div class="form-group">

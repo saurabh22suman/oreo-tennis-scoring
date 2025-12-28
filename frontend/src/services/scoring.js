@@ -6,13 +6,21 @@ export const MatchMode = {
     SHORT_FORMAT: 'short'      // Recreational: Points → Games (best of 3)
 };
 
+export const MatchType = {
+    SINGLES: 'singles',           // 1 vs 1
+    DOUBLES: 'doubles',           // 2 vs 2
+    AUSTRALIAN_DOUBLES: '1v2'     // 1 vs 2 (recreational)
+};
+
 export const GameState = {
     IN_PROGRESS: 'in_progress',
     DEUCE: 'deuce',
     ADVANTAGE_A: 'advantage_a',
     ADVANTAGE_B: 'advantage_b',
     WON_A: 'won_a',
-    WON_B: 'won_b'
+    WON_B: 'won_b',
+    // Deuce tiebreaker states (best of 3 points)
+    DEUCE_TIEBREAKER: 'deuce_tiebreaker'
 };
 
 // ═══════════════════════════════════════════════════
@@ -103,6 +111,9 @@ export function createMatchState(mode, players, servers = null, bestOf = 3) {
             serverIndex: 0           // Index into servers array (short format)
         },
 
+        // Deuce tiebreaker state (null when not in tiebreaker)
+        deuceTiebreaker: null, // { pointsA: 0, pointsB: 0, active: true }
+
         // Games won (tracked differently per mode)
         gamesA: 0,
         gamesB: 0,
@@ -124,6 +135,12 @@ export function createMatchState(mode, players, servers = null, bestOf = 3) {
 
 export function scorePoint(matchState, team) {
     const state = { ...matchState };
+    
+    // Check if we're in deuce tiebreaker mode
+    if (state.deuceTiebreaker?.active) {
+        return scoreDeuceTiebreakerPoint(state, team);
+    }
+    
     const game = { ...state.currentGame };
 
     // Add point
@@ -143,6 +160,65 @@ export function scorePoint(matchState, team) {
 
     state.currentGame = game;
     return state;
+}
+
+// ═══════════════════════════════════════════════════
+// DEUCE TIEBREAKER (Best of 3 points)
+// ═══════════════════════════════════════════════════
+
+// Start deuce tiebreaker - called when player manually triggers it during deuce
+export function startDeuceTiebreaker(matchState) {
+    const state = { ...matchState };
+    state.deuceTiebreaker = {
+        pointsA: 0,
+        pointsB: 0,
+        active: true
+    };
+    return state;
+}
+
+// Check if currently in deuce (for UI to show tiebreaker button)
+export function isInDeuce(matchState) {
+    if (matchState.deuceTiebreaker?.active) return false; // Already in tiebreaker
+    const { pointsA, pointsB } = matchState.currentGame;
+    const gameState = getGameState(pointsA, pointsB);
+    return gameState === GameState.DEUCE || 
+           gameState === GameState.ADVANTAGE_A || 
+           gameState === GameState.ADVANTAGE_B;
+}
+
+// Score a point during deuce tiebreaker
+function scoreDeuceTiebreakerPoint(matchState, team) {
+    const state = { ...matchState };
+    const tiebreaker = { ...state.deuceTiebreaker };
+    
+    if (team === 'A') {
+        tiebreaker.pointsA++;
+    } else {
+        tiebreaker.pointsB++;
+    }
+    
+    // Best of 3: First to 2 points wins the game
+    if (tiebreaker.pointsA >= 2) {
+        // Team A wins the game
+        state.deuceTiebreaker = null;
+        return handleGameWon(state, 'A');
+    }
+    if (tiebreaker.pointsB >= 2) {
+        // Team B wins the game
+        state.deuceTiebreaker = null;
+        return handleGameWon(state, 'B');
+    }
+    
+    state.deuceTiebreaker = tiebreaker;
+    return state;
+}
+
+// Get display for deuce tiebreaker
+export function getDeuceTiebreakerDisplay(matchState) {
+    if (!matchState.deuceTiebreaker?.active) return null;
+    const { pointsA, pointsB } = matchState.deuceTiebreaker;
+    return { a: pointsA.toString(), b: pointsB.toString() };
 }
 
 // ═══════════════════════════════════════════════════
@@ -238,8 +314,22 @@ function handleStandardGameWon(state, winner) {
 // ═══════════════════════════════════════════════════
 
 export function getMatchDisplay(matchState) {
-    const { mode, currentGame, gamesA, gamesB, setsA, setsB, bestOf } = matchState;
-    const pointDisplay = getGameDisplayText(currentGame.pointsA, currentGame.pointsB);
+    const { mode, currentGame, gamesA, gamesB, setsA, setsB, bestOf, deuceTiebreaker } = matchState;
+    
+    // Check if in deuce tiebreaker
+    let pointDisplay;
+    let inDeuceTiebreaker = false;
+    
+    if (deuceTiebreaker?.active) {
+        // Show tiebreaker points (0, 1, 2)
+        pointDisplay = { 
+            a: `TB: ${deuceTiebreaker.pointsA}`, 
+            b: `TB: ${deuceTiebreaker.pointsB}` 
+        };
+        inDeuceTiebreaker = true;
+    } else {
+        pointDisplay = getGameDisplayText(currentGame.pointsA, currentGame.pointsB);
+    }
 
     if (mode === MatchMode.SHORT_FORMAT) {
         return {
@@ -248,7 +338,9 @@ export function getMatchDisplay(matchState) {
             gameNumber: currentGame.gameNumber,
             totalGames: bestOf || 3,
             gamesToWin: matchState.gamesToWin || 2,
-            server: matchState.servers ? matchState.servers[currentGame.serverIndex] : null
+            server: matchState.servers ? matchState.servers[currentGame.serverIndex] : null,
+            inDeuceTiebreaker,
+            canStartDeuceTiebreaker: isInDeuce(matchState)
         };
     } else {
         return {
@@ -256,7 +348,9 @@ export function getMatchDisplay(matchState) {
             games: { a: gamesA, b: gamesB },
             sets: { a: setsA, b: setsB },
             currentSet: matchState.currentSet,
-            isTieBreak: isTieBreak(gamesA, gamesB)
+            isTieBreak: isTieBreak(gamesA, gamesB),
+            inDeuceTiebreaker,
+            canStartDeuceTiebreaker: isInDeuce(matchState)
         };
     }
 }
