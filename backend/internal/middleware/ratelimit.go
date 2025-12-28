@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -94,14 +95,31 @@ func (rl *RateLimiter) Limit(next http.Handler) http.Handler {
 }
 
 // getClientIP extracts the client IP from the request.
+// Properly handles X-Forwarded-For to prevent IP spoofing.
 func getClientIP(r *http.Request) string {
 	// Check X-Forwarded-For header (from reverse proxy)
+	// Take the first IP in the chain (original client IP)
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return xff
+		ips := strings.Split(xff, ",")
+		if len(ips) > 0 {
+			// First IP is the original client
+			clientIP := strings.TrimSpace(ips[0])
+			if clientIP != "" {
+				return clientIP
+			}
+		}
 	}
 	// Check X-Real-IP header
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+		return strings.TrimSpace(xri)
 	}
-	return r.RemoteAddr
+	// Fall back to RemoteAddr, stripping port if present
+	remoteAddr := r.RemoteAddr
+	if idx := strings.LastIndex(remoteAddr, ":"); idx != -1 {
+		// Check if this is IPv6 (contains brackets)
+		if !strings.Contains(remoteAddr, "]") || strings.LastIndex(remoteAddr, ":") > strings.LastIndex(remoteAddr, "]") {
+			remoteAddr = remoteAddr[:idx]
+		}
+	}
+	return remoteAddr
 }

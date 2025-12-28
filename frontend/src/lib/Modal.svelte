@@ -37,7 +37,7 @@
       <div class="modal-icon">{icon}</div>
       <h2 class="modal-title">{title}</h2>
       {#if message}
-        <p class="modal-message">{@html message}</p>
+        <p class="modal-message">{message}</p>
       {/if}
       <slot></slot>
       <div class="modal-actions">

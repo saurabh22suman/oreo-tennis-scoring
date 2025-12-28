@@ -75,8 +75,10 @@ func (h *VenueHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.Name) > 100 {
-		WriteError(w, http.StatusBadRequest, "name must be 100 characters or less")
+	// Validate and sanitize name
+	name, valid := ValidateNameWithLength(req.Name, 100)
+	if !valid {
+		WriteError(w, http.StatusBadRequest, "name contains invalid characters or exceeds 100 characters")
 		return
 	}
 
@@ -86,7 +88,7 @@ func (h *VenueHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	venue := &model.Venue{
-		Name:    req.Name,
+		Name:    name,
 		Surface: req.Surface,
 		Active:  true,
 	}
@@ -129,15 +131,12 @@ func (h *VenueHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Name != nil {
-		if *req.Name == "" {
-			WriteError(w, http.StatusBadRequest, "name cannot be empty")
+		name, valid := ValidateNameWithLength(*req.Name, 100)
+		if !valid {
+			WriteError(w, http.StatusBadRequest, "name contains invalid characters or exceeds 100 characters")
 			return
 		}
-		if len(*req.Name) > 100 {
-			WriteError(w, http.StatusBadRequest, "name must be 100 characters or less")
-			return
-		}
-		venue.Name = *req.Name
+		venue.Name = name
 	}
 	if req.Surface != nil {
 		if !validSurfaces[*req.Surface] {

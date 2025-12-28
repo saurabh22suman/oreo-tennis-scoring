@@ -68,13 +68,15 @@ func (h *PlayerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.Name) > 100 {
-		WriteError(w, http.StatusBadRequest, "name must be 100 characters or less")
+	// Validate and sanitize name
+	name, valid := ValidateNameWithLength(req.Name, 100)
+	if !valid {
+		WriteError(w, http.StatusBadRequest, "name contains invalid characters or exceeds 100 characters")
 		return
 	}
 
 	player := &model.Player{
-		Name:   req.Name,
+		Name:   name,
 		Active: true,
 	}
 
@@ -119,15 +121,12 @@ func (h *PlayerHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	// Apply updates
 	if req.Name != nil {
-		if *req.Name == "" {
-			WriteError(w, http.StatusBadRequest, "name cannot be empty")
+		name, valid := ValidateNameWithLength(*req.Name, 100)
+		if !valid {
+			WriteError(w, http.StatusBadRequest, "name contains invalid characters or exceeds 100 characters")
 			return
 		}
-		if len(*req.Name) > 100 {
-			WriteError(w, http.StatusBadRequest, "name must be 100 characters or less")
-			return
-		}
-		player.Name = *req.Name
+		player.Name = name
 	}
 	if req.Active != nil {
 		player.Active = *req.Active
