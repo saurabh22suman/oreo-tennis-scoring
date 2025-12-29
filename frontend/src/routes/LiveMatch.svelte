@@ -2,7 +2,7 @@
 <script>
   import { onMount } from 'svelte';
   import { navigate, matchState, players } from '../stores/app.js';
-  import { saveEvent, getCurrentMatch, saveCurrentMatch, clearCurrentMatch, deleteIncompleteMatch } from '../services/db.js';
+  import { saveEvent, getCurrentMatch, saveCurrentMatch, clearCurrentMatch, deleteIncompleteMatch, deleteLastEvent } from '../services/db.js';
   import { syncEvents, completeMatch as apiCompleteMatch } from '../services/api.js';
   import { v4 as uuidv4 } from 'uuid';
   import { createMatchState, scorePoint, getMatchDisplay, MatchMode, startDeuceTiebreaker } from '../services/scoring.js';
@@ -160,6 +160,38 @@
       serverTeam: nextTeam,
     }));
     
+    saveCurrentMatch({
+      ...$matchState,
+      score: scoringState ? {
+        pointsA: scoringState.score?.pointsA || 0,
+        pointsB: scoringState.score?.pointsB || 0,
+        gamesA: scoringState.score?.gamesA || 0,
+        gamesB: scoringState.score?.gamesB || 0,
+        setsA: scoringState.score?.setsA || 0,
+        setsB: scoringState.score?.setsB || 0,
+      } : null,
+    });
+  }
+  
+  async function undoLastPoint() {
+    // Don't allow undo if no events
+    if (!$matchState.events || $matchState.events.length === 0) {
+      return;
+    }
+    
+    // Delete last event from IndexedDB
+    await deleteLastEvent($matchState.id);
+    
+    // Remove last event from match state
+    matchState.update(m => ({
+      ...m,
+      events: m.events.slice(0, -1),
+    }));
+    
+    // Reinitialize scoring state from remaining events
+    initializeScoringState();
+    
+    // Save updated match state
     saveCurrentMatch({
       ...$matchState,
       score: scoringState ? {
@@ -403,6 +435,15 @@
       Double Fault
     </button>
     
+    <!-- Undo Last Point Button -->
+    <button 
+      class="btn btn-action btn-undo" 
+      on:click={undoLastPoint}
+      disabled={!$matchState.events || $matchState.events.length === 0}
+    >
+      ↩ Undo Last Point
+    </button>
+    
     <!-- Deuce Tiebreaker Button - shown when in deuce/advantage -->
     {#if canStartDeuceTiebreaker}
       <button 
@@ -623,5 +664,22 @@
     font-size: 14px;
     font-weight: 600;
     margin-top: var(--space-sm);
+  }
+  
+  .btn-undo {
+    background: #6b7280;
+    color: white;
+    border: none;
+    font-weight: 500;
+  }
+  
+  .btn-undo:hover:not(:disabled) {
+    background: #4b5563;
+  }
+  
+  .btn-undo:disabled {
+    background: #374151;
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

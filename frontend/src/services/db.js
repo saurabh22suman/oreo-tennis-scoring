@@ -188,6 +188,22 @@ export async function getAllMatchEvents(matchId) {
     return await index.getAll(matchId);
 }
 
+export async function deleteLastEvent(matchId) {
+    const db = await getDB();
+    const tx = db.transaction('events', 'readwrite');
+    const index = tx.store.index('matchId');
+    const events = await index.getAll(matchId);
+    if (events.length > 0) {
+        // Sort by timestamp and delete the last one
+        events.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        const lastEvent = events[events.length - 1];
+        await tx.store.delete(lastEvent.id);
+        await tx.done;
+        return lastEvent;
+    }
+    return null;
+}
+
 export async function markEventsSynced(eventIds) {
     const db = await getDB();
     const tx = db.transaction('events', 'readwrite');
