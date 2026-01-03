@@ -7,6 +7,7 @@
   let teams = [];
   let creationMode = 'random'; // 'random' or 'manual'
   let loading = true;
+  let hasShuffled = false; // Track if teams have been shuffled (one-time only)
   
   onMount(() => {
     const stored = localStorage.getItem('tournamentSetup');
@@ -26,6 +27,9 @@
       player2: null
     }));
     
+    // Auto-shuffle teams on first load
+    generateRandomTeams();
+    
     loading = false;
   });
   
@@ -39,7 +43,7 @@
   }
   
   function generateRandomTeams() {
-    if (!tournamentData) return;
+    if (!tournamentData || hasShuffled) return;
     
     const shuffledPlayers = shuffleArray(tournamentData.players);
     teams = teams.map((team, index) => ({
@@ -47,6 +51,8 @@
       player1: shuffledPlayers[index * 2] || null,
       player2: shuffledPlayers[index * 2 + 1] || null
     }));
+    
+    hasShuffled = true; // Mark as shuffled - no more reshuffling allowed
   }
   
   function clearTeams() {
@@ -139,12 +145,8 @@
           </button>
         </div>
         
-        {#if creationMode === 'random'}
-          <div class="action-buttons">
-            <button class="btn btn-secondary" on:click={generateRandomTeams}>
-              🎲 Shuffle Teams
-            </button>
-          </div>
+        {#if creationMode === 'random' && hasShuffled}
+          <p class="shuffle-info">✓ Teams have been randomly assigned</p>
         {/if}
       </div>
       
@@ -333,6 +335,12 @@
   .toggle-btn.active {
     background: var(--accent);
     color: white;
+  }
+  
+  .shuffle-info {
+    color: var(--accent);
+    font-size: 13px;
+    margin: 0;
   }
   
   .action-buttons {

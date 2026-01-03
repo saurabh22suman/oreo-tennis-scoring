@@ -2,10 +2,12 @@
 import { openDB } from 'idb';
 
 const DB_NAME = 'ots-db';
-const DB_VERSION = 2; // Bumped for new schema
+const DB_VERSION = 3; // Bumped for temp players support
 
 // Match expiry time: 1 day in milliseconds
 const MATCH_EXPIRY_MS = 24 * 60 * 60 * 1000;
+// Temp player expiry time: 1 day in milliseconds
+const TEMP_PLAYER_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 let dbPromise = null;
 
@@ -39,6 +41,13 @@ export function getDB() {
                 // Cache for venues
                 if (!db.objectStoreNames.contains('venues')) {
                     db.createObjectStore('venues', { keyPath: 'id' });
+                }
+
+                // Store for temporary players (venue-specific, 1-day expiry)
+                if (!db.objectStoreNames.contains('tempPlayers')) {
+                    const tempStore = db.createObjectStore('tempPlayers', { keyPath: 'id' });
+                    tempStore.createIndex('venueId', 'venueId');
+                    tempStore.createIndex('createdAt', 'createdAt');
                 }
             },
         });
@@ -260,4 +269,84 @@ export async function cacheVenues(venues) {
 export async function getCachedVenues() {
     const db = await getDB();
     return await db.getAll('venues');
+}
+
+// ═══════════════════════════════════════════════════
+// TEMPORARY PLAYERS (Venue-specific, 1-day validity)
+// ═══════════════════════════════════════════════════
+
+export async function createTempPlayer(name, venueId) {
+    const db = await getDB();
+    const id = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const tempPlayer = {
+        id,
+        name,
+        venueId,
+        active: true,
+        isTemp: true,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + TEMP_PLAYER_EXPIRY_MS,
+    };
+    await db.put('tempPlayers', tempPlayer);
+    return tempPlayer;
+}
+
+export async function getTempPlayersForVenue(venueId) {
+    try {
+        const db = await getDB();
+        // First cleanup expired temp players
+        await cleanupExpiredTempPlayers();
+        
+        const tx = db.transaction('tempPlayers', 'readonly');
+        const index = tx.store.index('venueId');
+        const players = await index.getAll(venueId);
+        
+        // Filter out expired players
+        const now = Date.now();
+        return players.filter(p => p.expiresAt > now);
+    } catch (err) {
+        console.error('Failed to get temp players:', err);
+        return [];
+    }
+}
+
+export async function getAllTempPlayers() {
+    try {
+        const db = await getDB();
+        await cleanupExpiredTempPlayers();
+        
+        const players = await db.getAll('tempPlayers');
+        const now = Date.now();
+        return players.filter(p => p.expiresAt > now);
+    } catch (err) {
+        console.error('Failed to get all temp players:', err);
+        return [];
+    }
+}
+
+export async function deleteTempPlayer(id) {
+    try {
+        const db = await getDB();
+        await db.delete('tempPlayers', id);
+    } catch (err) {
+        console.error('Failed to delete temp player:', err);
+    }
+}
+
+export async function cleanupExpiredTempPlayers() {
+    try {
+        const db = await getDB();
+        const now = Date.now();
+        const tx = db.transaction('tempPlayers', 'readwrite');
+        const players = await tx.store.getAll();
+        
+        for (const player of players) {
+            if (player.expiresAt <= now) {
+                await tx.store.delete(player.id);
+            }
+        }
+        await tx.done;
+    } catch (err) {
+        console.error('Failed to cleanup expired temp players:', err);
+    }
 }

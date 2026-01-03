@@ -267,7 +267,10 @@
             {#each standings as row, index}
               <div class="standings-row" class:qualified={index < (standings.length >= 4 ? 4 : 2)}>
                 <span class="col-rank">{index + 1}</span>
-                <span class="col-team">{row.team.name}</span>
+                <span class="col-team">
+                  <span class="team-name-main">{row.team.name}</span>
+                  <span class="team-players-sub">{getTeamNames(row.team)}</span>
+                </span>
                 <span class="col-stat">{row.played}</span>
                 <span class="col-stat">{row.won}</span>
                 <span class="col-stat">{row.lost}</span>
@@ -284,12 +287,14 @@
             {#each roundRobinMatches as match}
               <div class="match-card" class:completed={match.status === 'completed'}>
                 <div class="match-teams">
-                  <div class="team" class:winner={match.winner === match.teamA.id}>
-                    {match.teamA.name}
+                  <div class="team-block" class:winner={match.winner === match.teamA.id}>
+                    <span class="team-name">{match.teamA.name}</span>
+                    <span class="team-players">{getTeamNames(match.teamA)}</span>
                   </div>
                   <span class="vs">vs</span>
-                  <div class="team" class:winner={match.winner === match.teamB.id}>
-                    {match.teamB.name}
+                  <div class="team-block" class:winner={match.winner === match.teamB.id}>
+                    <span class="team-name">{match.teamB.name}</span>
+                    <span class="team-players">{getTeamNames(match.teamB)}</span>
                   </div>
                 </div>
                 
@@ -341,12 +346,14 @@
                 <div class="match-card knockout" class:completed={match.status === 'completed'}>
                   <div class="match-label">{match.matchLabel || (match.stage === 'final' ? '🏆 Final' : 'Semi-Final')}</div>
                   <div class="match-teams">
-                    <div class="team" class:winner={match.winner === match.teamA.id}>
-                      {match.teamA.name}
+                    <div class="team-block" class:winner={match.winner === match.teamA.id}>
+                      <span class="team-name">{match.teamA.name}</span>
+                      <span class="team-players">{getTeamNames(match.teamA)}</span>
                     </div>
                     <span class="vs">vs</span>
-                    <div class="team" class:winner={match.winner === match.teamB.id}>
-                      {match.teamB.name}
+                    <div class="team-block" class:winner={match.winner === match.teamB.id}>
+                      <span class="team-name">{match.teamB.name}</span>
+                      <span class="team-players">{getTeamNames(match.teamB)}</span>
                     </div>
                   </div>
                   
@@ -594,6 +601,50 @@
   .team.winner {
     color: var(--accent);
     font-weight: 600;
+  }
+  
+  /* Team block with player names */
+  .team-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  
+  .team-block .team-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  
+  .team-block .team-players {
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+  
+  .team-block.winner .team-name {
+    color: var(--accent);
+  }
+  
+  .team-block.winner .team-players {
+    color: var(--accent);
+    opacity: 0.8;
+  }
+  
+  /* Standings player names */
+  .col-team {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  
+  .team-name-main {
+    font-weight: 600;
+  }
+  
+  .team-players-sub {
+    font-size: 11px;
+    color: var(--text-secondary);
   }
   
   .vs {

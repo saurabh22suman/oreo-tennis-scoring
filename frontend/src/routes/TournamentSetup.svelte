@@ -1,6 +1,7 @@
 <!-- Tournament Setup Screen - Per OTS_Tournament_Spec.md -->
 <script>
   import { navigate, venues as venueStore, players as playerStore } from '../stores/app.js';
+  import { createTempPlayer, getTempPlayersForVenue } from '../services/db.js';
   import { onMount } from 'svelte';
   
   let selectedVenueId = '';
@@ -8,17 +9,39 @@
   let loading = true;
   let error = '';
   
+  // Temp player support
+  let tempPlayers = [];
+  let showTempPlayerModal = false;
+  let newTempPlayerName = '';
+  let creatingTempPlayer = false;
+  
+  // Combine regular and temp players
+  $: allPlayers = [...$playerStore, ...tempPlayers];
+  
   // Computed values
   $: numberOfTeams = Math.floor(selectedPlayers.length / 2);
   $: totalMatches = numberOfTeams > 1 ? (numberOfTeams * (numberOfTeams - 1)) / 2 : 0;
-  $: isValidSelection = selectedPlayers.length >= 4 && selectedPlayers.length % 2 === 0;
+  $: isValidSelection = selectedPlayers.length >= 6 && selectedPlayers.length % 2 === 0;
   $: validationMessage = getValidationMessage(selectedPlayers.length);
   
   function getValidationMessage(count) {
-    if (count < 4) return `Select at least ${4 - count} more player${4 - count !== 1 ? 's' : ''}`;
+    if (count < 6) return `Select at least ${6 - count} more player${6 - count !== 1 ? 's' : ''} (min 6)`;
     if (count % 2 !== 0) return 'Select one more player (need even number)';
     return '';
   }
+  
+  async function loadTempPlayers() {
+    if (selectedVenueId) {
+      tempPlayers = await getTempPlayersForVenue(selectedVenueId);
+      // Deselect any temp players that no longer exist
+      selectedPlayers = selectedPlayers.filter(id => 
+        allPlayers.some(p => p.id === id)
+      );
+    }
+  }
+  
+  // Reload temp players when venue changes
+  $: if (selectedVenueId) loadTempPlayers();
   
   onMount(async () => {
     try {
@@ -51,6 +74,21 @@
     }
   });
   
+  async function addTempPlayer() {
+    if (!newTempPlayerName.trim()) return;
+    
+    creatingTempPlayer = true;
+    try {
+      const tempPlayer = await createTempPlayer(newTempPlayerName.trim(), selectedVenueId);
+      tempPlayers = [...tempPlayers, tempPlayer];
+      newTempPlayerName = '';
+      showTempPlayerModal = false;
+    } catch (err) {
+      console.error('Failed to create temp player:', err);
+    }
+    creatingTempPlayer = false;
+  }
+  
   function togglePlayer(playerId) {
     if (selectedPlayers.includes(playerId)) {
       selectedPlayers = selectedPlayers.filter(id => id !== playerId);
@@ -61,7 +99,7 @@
   
   function selectAll() {
     // Select all players (if odd, exclude last one)
-    const allIds = $playerStore.map(p => p.id);
+    const allIds = allPlayers.map(p => p.id);
     selectedPlayers = allIds.length % 2 === 0 ? allIds : allIds.slice(0, -1);
   }
   
@@ -83,7 +121,7 @@
       venueName: selectedVenue?.name || '',
       venueSurface: selectedVenue?.surface || '',
       playerIds: selectedPlayers,
-      players: $playerStore.filter(p => selectedPlayers.includes(p.id))
+      players: allPlayers.filter(p => selectedPlayers.includes(p.id))
     };
     
     localStorage.setItem('tournamentSetup', JSON.stringify(tournamentData));
@@ -172,20 +210,34 @@
           </div>
         </div>
         
-        {#if $playerStore.length === 0}
+        {#if $playerStore.length === 0 && tempPlayers.length === 0}
           <p class="empty-message">No players available. Add players in Admin panel.</p>
         {:else}
+          <!-- Add Guest Player Button -->
+          <div class="add-guest-section">
+            <button class="btn-add-guest" on:click={() => showTempPlayerModal = true}>
+              + Add Guest Player
+            </button>
+            {#if tempPlayers.length > 0}
+              <span class="guest-count">{tempPlayers.length} guest{tempPlayers.length > 1 ? 's' : ''} (24h valid)</span>
+            {/if}
+          </div>
+          
           <div class="player-grid">
-            {#each $playerStore as player}
+            {#each allPlayers as player}
               <button
                 class="player-chip"
                 class:selected={selectedPlayers.includes(player.id)}
+                class:temp={player.isTemp}
                 on:click={() => togglePlayer(player.id)}
               >
                 {#if selectedPlayers.includes(player.id)}
                   <span class="chip-check">✓</span>
                 {/if}
                 <span class="chip-name">{player.name}</span>
+                {#if player.isTemp}
+                  <span class="chip-guest">👤</span>
+                {/if}
               </button>
             {/each}
           </div>
@@ -256,6 +308,31 @@
     {/if}
   </div>
 </div>
+
+<!-- Add Guest Player Modal -->
+{#if showTempPlayerModal}
+  <div class="modal-overlay" on:click={() => showTempPlayerModal = false}>
+    <div class="modal-content" on:click|stopPropagation>
+      <h3>Add Guest Player</h3>
+      <p class="modal-desc">Guest players are only valid for 24 hours at this venue.</p>
+      <input 
+        type="text" 
+        class="form-input"
+        placeholder="Enter player name..."
+        bind:value={newTempPlayerName}
+        on:keydown={(e) => e.key === 'Enter' && addTempPlayer()}
+      />
+      <div class="modal-actions">
+        <button class="btn btn-secondary" on:click={() => showTempPlayerModal = false}>
+          Cancel
+        </button>
+        <button class="btn btn-primary" on:click={addTempPlayer} disabled={creatingTempPlayer}>
+          {creatingTempPlayer ? 'Adding...' : 'Add Player'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .screen {
@@ -631,5 +708,108 @@
   .btn-secondary {
     background: var(--surface);
     color: var(--text-primary);
+  }
+  
+  /* Guest Player Section */
+  .add-guest-section {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    margin-bottom: var(--space-md);
+  }
+  
+  .btn-add-guest {
+    background: var(--surface);
+    border: 1px dashed var(--text-secondary);
+    color: var(--text-secondary);
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-btn);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .btn-add-guest:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  
+  .guest-count {
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+  
+  .player-chip.temp {
+    border: 1px dashed var(--text-secondary);
+  }
+  
+  .player-chip.temp.selected {
+    border-style: solid;
+  }
+  
+  .chip-guest {
+    font-size: 10px;
+    margin-left: 2px;
+  }
+  
+  /* Modal Styles */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: var(--space-md);
+  }
+  
+  .modal-content {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-card);
+    padding: var(--space-lg);
+    width: 100%;
+    max-width: 350px;
+  }
+  
+  .modal-content h3 {
+    color: var(--text-primary);
+    margin-bottom: var(--space-sm);
+    font-size: 18px;
+  }
+  
+  .modal-desc {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-bottom: var(--space-md);
+  }
+  
+  .form-input {
+    width: 100%;
+    padding: var(--space-md);
+    background: var(--surface);
+    border: 1px solid var(--surface);
+    border-radius: var(--radius-btn);
+    color: var(--text-primary);
+    font-size: 16px;
+    margin-bottom: var(--space-md);
+  }
+  
+  .form-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  
+  .modal-actions {
+    display: flex;
+    gap: var(--space-sm);
+  }
+  
+  .modal-actions .btn {
+    flex: 1;
+    padding: var(--space-md);
   }
 </style>

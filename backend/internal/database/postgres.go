@@ -44,6 +44,7 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		createMatchesTable,
 		createMatchPlayersTable,
 		createPointEventsTable,
+		alterMatchTypeConstraint, // Add support for '1v2' (Australian Doubles)
 	}
 
 	for i, migration := range migrations {
@@ -82,7 +83,7 @@ const createMatchesTable = `
 CREATE TABLE IF NOT EXISTS matches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     venue_id UUID NOT NULL REFERENCES venues(id),
-    match_type VARCHAR(20) NOT NULL CHECK (match_type IN ('singles', 'doubles')),
+    match_type VARCHAR(20) NOT NULL CHECK (match_type IN ('singles', 'doubles', '1v2')),
     started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     ended_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
@@ -116,4 +117,25 @@ CREATE TABLE IF NOT EXISTS point_events (
 
 CREATE INDEX IF NOT EXISTS idx_point_events_match ON point_events(match_id);
 CREATE INDEX IF NOT EXISTS idx_point_events_timestamp ON point_events(match_id, timestamp);
+`
+
+// Migration to add '1v2' (Australian Doubles) to match_type constraint
+const alterMatchTypeConstraint = `
+DO $$
+BEGIN
+    -- Drop the old constraint if it exists
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'matches_match_type_check'
+    ) THEN
+        ALTER TABLE matches DROP CONSTRAINT matches_match_type_check;
+    END IF;
+    
+    -- Add the new constraint with '1v2' included
+    ALTER TABLE matches ADD CONSTRAINT matches_match_type_check 
+        CHECK (match_type IN ('singles', 'doubles', '1v2'));
+EXCEPTION
+    WHEN duplicate_object THEN
+        NULL; -- Constraint already exists with correct definition
+END $$;
 `
