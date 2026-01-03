@@ -18,7 +18,18 @@
   let showSyncFailedModal = false;
   let showSyncFailedAlertModal = false;
   
-  $: serverPlayer = $players.find(p => p.id === $matchState.currentServer);
+  // Helper function to get player name - supports temp players via playerInfo
+  function getPlayerName(playerId) {
+    // First check playerInfo from match state (includes temp players)
+    if ($matchState.playerInfo && $matchState.playerInfo[playerId]) {
+      return $matchState.playerInfo[playerId].name;
+    }
+    // Fall back to players store
+    const player = $players.find(p => p.id === playerId);
+    return player ? player.name : 'Unknown';
+  }
+  
+  $: serverPlayerName = getPlayerName($matchState.currentServer);
   $: serverTeam = $matchState.serverTeam;
   $: display = scoringState ? getMatchDisplay(scoringState) : null;
   $: canStartDeuceTiebreaker = display?.canStartDeuceTiebreaker || false;
@@ -135,6 +146,8 @@
   async function attemptSync() {
     // Skip sync for tournament matches (they use local storage only)
     if ($matchState.isTournamentMatch) return;
+    // Skip sync for matches with temp/guest players (they're local only)
+    if ($matchState.hasTempPlayers) return;
     if (syncing || !navigator.onLine) return;
     
     syncing = true;
@@ -393,7 +406,7 @@
   <div class="server-indicator" on:click={toggleServer} style="cursor: pointer;">
     <div class="server-dot"></div>
     <span class="server-name">
-      {serverPlayer?.name || 'Server'} (Team {serverTeam})
+      {serverPlayerName} (Team {serverTeam})
     </span>
     <span class="text-secondary" style="font-size: 12px; margin-left: auto;">tap to change</span>
   </div>
